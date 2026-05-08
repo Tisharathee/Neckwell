@@ -14,9 +14,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
 
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(navController: NavController) {
     var notificationsEnabled by remember { mutableStateOf(true) }
     var hapticFeedback by remember { mutableStateOf(true) }
     var soundAlerts by remember { mutableStateOf(false) }
@@ -115,6 +116,21 @@ fun SettingsScreen() {
             )
 
             Spacer(modifier = Modifier.height(8.dp))
+            // Calibration Section
+            Text(
+                text = "Calibration",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.Gray,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
+            )
+
+            SettingsClickableItem(
+                icon = "🎯",
+                title = "Calibrate Posture",
+                description = "Set your neutral posture baseline",
+                onClick = { navController.navigate("calibration") }
+            )
 
             // About Section
             Text(

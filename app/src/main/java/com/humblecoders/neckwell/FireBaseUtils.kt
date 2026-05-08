@@ -1,5 +1,5 @@
 package com.humblecoders.neckwell
-
+import com.google.firebase.auth.FirebaseAuth
 import android.annotation.SuppressLint
 import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
@@ -146,6 +146,19 @@ fun countAlerts(postureDataList: List<PostureData>): Int {
     return postureDataList.count {
         it.posture == "Poor" || it.posture == "Very poor"
     }
+}
+suspend fun saveBaselineToFirestore(baseline: Baseline): Result<Unit> = runCatching {
+    val uid = FirebaseAuth.getInstance().currentUser?.uid ?: "anonymous"
+    val data = mapOf(
+        "pitch" to baseline.pitch,
+        "roll" to baseline.roll,
+        "sampleCount" to baseline.sampleCount,
+        "capturedAt" to baseline.capturedAt
+    )
+    FirebaseFirestore.getInstance()
+        .collection("users").document(uid)
+        .collection("calibration").document("baseline")
+        .set(data).await()
 }
 
 fun getPostureDistribution(postureDataList: List<PostureData>): Map<String, Int> {

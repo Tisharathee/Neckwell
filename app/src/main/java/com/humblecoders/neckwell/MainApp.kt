@@ -9,6 +9,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.NavController
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,7 +57,8 @@ fun MainApp() {
             composable("home") { HomeScreen() }
             composable("analytics") { AnalyticsScreen() }
             composable("tips") { TipsScreen() }
-            composable("settings") { SettingsScreen() }
+            composable("settings") { SettingsScreen(navController = navController) }
+            composable("calibration") { CalibrationScreen(navController = navController) }
         }
     }
 }
