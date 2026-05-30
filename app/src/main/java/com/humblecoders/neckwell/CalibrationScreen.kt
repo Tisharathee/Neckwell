@@ -1,6 +1,8 @@
 package com.humblecoders.neckwell
 
 import android.Manifest
+import com.google.firebase.Firebase
+import com.google.firebase.firestore.firestore
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -47,19 +49,77 @@ fun CalibrationScreen(navController: NavController) {
         if (!hasCameraPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
-    // Shared state between analyzer and UI
+    // Camera posture detection state
     var statusText by remember { mutableStateOf("Turn sideways to the camera") }
     var cvaValue by remember { mutableFloatStateOf(0f) }
     var stableFrames by remember { mutableIntStateOf(0) }
     var calibrationTriggered by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    var captureProgress by remember { mutableFloatStateOf(0f) }
     var capturedBaseline by remember { mutableStateOf<Baseline?>(null) }
+
+    // ESP32 / Firebase sensor state
+    var espStatus by remember { mutableStateOf("Idle") }
+    var espProgress by remember { mutableIntStateOf(0) }
+    var espPitch by remember { mutableFloatStateOf(0f) }
+    var espRoll by remember { mutableFloatStateOf(0f) }
+    var espBaselineSaved by remember { mutableStateOf(false) }
+
+    // Listen to ESP32 calibration document in real time
+    LaunchedEffect(Unit) {
+        Firebase.firestore
+            .collection("esp32")
+            .document("calibration")
+            .addSnapshotListener { snapshot, error ->
+                if (snapshot == null || error != null) return@addSnapshotListener
+
+                val newStatus = snapshot.getString("status") ?: "Idle"
+                val newProgress = snapshot.getLong("progress")?.toInt() ?: 0
+                val newPitch = snapshot.getDouble("pitch")?.toFloat() ?: 0f
+                val newRoll = snapshot.getDouble("roll")?.toFloat() ?: 0f
+
+                espStatus = newStatus
+                espProgress = newProgress
+                espPitch = newPitch
+                espRoll = newRoll
+
+                // When ESP32 confirms calibration is done, save baseline from sensor readings
+                if (newStatus == "calibrated" && !espBaselineSaved && calibrationTriggered) {
+                    espBaselineSaved = true
+                    statusText = "ESP32 calibrated! Saving baseline…"
+
+                    scope.launch {
+                        // Build baseline from ESP32 sensor values
+                        val sensorBaseline = Baseline(
+                            pitch = newPitch,
+                            roll = newRoll,
+                            sampleCount = 1
+                        )
+                        capturedBaseline = sensorBaseline
+
+                        val result = saveBaselineToFirestore(sensorBaseline)
+
+                        statusText = if (result.isSuccess)
+                            "Calibration complete ✓  pitch=${"%.1f".format(newPitch)}°  roll=${"%.1f".format(newRoll)}°"
+                        else
+                            "Saved locally (Firestore failed: ${result.exceptionOrNull()?.message})"
+
+                        // Mark ESP32 doc as acknowledged so it doesn't re-trigger
+                        Firebase.firestore
+                            .collection("esp32")
+                            .document("calibration")
+                            .update("status", "acknowledged")
+                    }
+                }
+            }
+    }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (hasCameraPermission) {
             CameraPreviewWithAnalysis(
                 onMetrics = { metrics ->
+                    // Stop updating camera state once calibration has been triggered
+                    if (calibrationTriggered) return@CameraPreviewWithAnalysis
+
                     if (metrics == null) {
                         statusText = "No person detected"
                         stableFrames = 0
@@ -67,41 +127,91 @@ fun CalibrationScreen(navController: NavController) {
                         statusText = metrics.reason
                         cvaValue = metrics.cva
                         stableFrames = if (metrics.isCorrect) stableFrames + 1 else 0
-                        if (stableFrames >= REQUIRED_STABLE_FRAMES && !calibrationTriggered) {
+
+                        if (stableFrames >= REQUIRED_STABLE_FRAMES) {
                             calibrationTriggered = true
-                            statusText = "Hold still — capturing baseline…"
-                            scope.launch {
-                                val baseline = BaselineCapture.capture { progress ->
-                                    captureProgress = progress
-                                }
-                                capturedBaseline = baseline
-                                statusText = "Saving baseline…"
-                                val result = saveBaselineToFirestore(baseline)
-                                statusText = if (result.isSuccess)
-                                    "Calibration complete ✓  pitch=${"%.1f".format(baseline.pitch)}°  roll=${"%.1f".format(baseline.roll)}°"
-                                else
-                                    "Saved locally (Firestore failed: ${result.exceptionOrNull()?.message})"
-                            }
+                            statusText = "Hold still — waiting for ESP32 to calibrate…"
+
+                            // Tell ESP32 to start calibration via Firebase
+                            Firebase.firestore
+                                .collection("esp32")
+                                .document("calibration")
+                                .set(
+                                    hashMapOf(
+                                        "requested" to true,
+                                        "status" to "pending",
+                                        "progress" to 0
+                                    )
+                                )
                         }
                     }
                 }
             )
 
-            // Status overlay
+            // Status overlay card
             Card(
-                modifier = Modifier.align(Alignment.TopCenter).padding(16.dp),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(16.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xCC000000))
             ) {
                 Column(Modifier.padding(16.dp)) {
+
                     Text(statusText, color = Color.White, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
-                    Text("CVA: ${"%.1f".format(cvaValue)}°", color = Color.White, fontSize = 14.sp)
-                    Text("Stable: $stableFrames / $REQUIRED_STABLE_FRAMES", color = Color.White, fontSize = 14.sp)
-                    if (calibrationTriggered && capturedBaseline == null) {
+
+                    // Camera CVA reading (only relevant before calibration triggers)
+                    if (!calibrationTriggered) {
+                        Text(
+                            "CVA: ${"%.1f".format(cvaValue)}°",
+                            color = Color.White,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            "Stable: $stableFrames / $REQUIRED_STABLE_FRAMES",
+                            color = Color.White,
+                            fontSize = 14.sp
+                        )
                         Spacer(Modifier.height(8.dp))
+                    }
+
+                    // ESP32 sensor section
+                    HorizontalDivider(color = Color.Gray, thickness = 0.5.dp)
+                    Spacer(Modifier.height(6.dp))
+
+                    Text(
+                        "ESP32 Status: $espStatus",
+                        color = Color.Cyan,
+                        fontSize = 13.sp
+                    )
+
+                    if (calibrationTriggered && espProgress > 0) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Sensor Progress: $espProgress%",
+                            color = Color.Green,
+                            fontSize = 13.sp
+                        )
                         LinearProgressIndicator(
-                            progress = { captureProgress },
-                            modifier = Modifier.fillMaxWidth()
+                            progress = { espProgress / 100f },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp)
+                        )
+                    }
+
+                    // Show sensor baseline values once ESP32 is done
+                    if (espStatus == "calibrated" || espStatus == "acknowledged") {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Sensor Pitch: ${"%.2f".format(espPitch)}°",
+                            color = Color.Yellow,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            "Sensor Roll: ${"%.2f".format(espRoll)}°",
+                            color = Color.Yellow,
+                            fontSize = 13.sp
                         )
                     }
                 }
@@ -109,11 +219,19 @@ fun CalibrationScreen(navController: NavController) {
 
             Button(
                 onClick = { navController.popBackStack() },
-                modifier = Modifier.align(Alignment.BottomCenter).padding(24.dp)
-            ) { Text(if (calibrationTriggered) "Done" else "Cancel") }
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(24.dp)
+            ) {
+                Text(if (capturedBaseline != null) "Done" else if (calibrationTriggered) "Cancel" else "Cancel")
+            }
+
         } else {
+            // No camera permission UI
             Column(
-                Modifier.fillMaxSize().padding(24.dp),
+                Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
