@@ -4,6 +4,8 @@ import android.Manifest
 import com.google.firebase.Firebase
 import com.google.firebase.firestore.firestore
 import android.content.pm.PackageManager
+import android.media.AudioManager
+import android.media.ToneGenerator
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -32,6 +34,15 @@ import kotlinx.coroutines.launch
 
 private const val REQUIRED_STABLE_FRAMES = 30  // ~1 sec at 30fps
 
+private fun playBeepTone(toneType: Int = ToneGenerator.TONE_PROP_BEEP, durationMs: Int = 250) {
+    try {
+        val toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
+        toneGenerator.startTone(toneType, durationMs)
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+}
+
 @Composable
 fun CalibrationScreen(navController: NavController) {
     val context = LocalContext.current
@@ -50,8 +61,9 @@ fun CalibrationScreen(navController: NavController) {
     }
 
     // Camera posture detection state
-    var statusText by remember { mutableStateOf("Turn sideways to the camera") }
+    var statusText by remember { mutableStateOf("Turn sideways to the camera and sit straight") }
     var cvaValue by remember { mutableFloatStateOf(0f) }
+    var lateralTiltValue by remember { mutableFloatStateOf(0f) }
     var stableFrames by remember { mutableIntStateOf(0) }
     var calibrationTriggered by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -82,32 +94,49 @@ fun CalibrationScreen(navController: NavController) {
                 espPitch = newPitch
                 espRoll = newRoll
 
-                // When ESP32 confirms calibration is done, save baseline from sensor readings
+                // When ESP32 confirms calibration is done, check sensor baseline quality before saving
                 if (newStatus == "calibrated" && !espBaselineSaved && calibrationTriggered) {
-                    espBaselineSaved = true
-                    statusText = "ESP32 calibrated! Saving baseline…"
+                    // SENSOR QUALITY GATE: Verify sensor reading is within acceptable upright thresholds
+                    val isRollAcceptable = kotlin.math.abs(newRoll) <= 15.0f
+                    val isPitchAcceptable = newPitch >= -25.0f && newPitch <= 25.0f
 
-                    scope.launch {
-                        // Build baseline from ESP32 sensor values
-                        val sensorBaseline = Baseline(
-                            pitch = newPitch,
-                            roll = newRoll,
-                            sampleCount = 1
-                        )
-                        capturedBaseline = sensorBaseline
-
-                        val result = saveBaselineToFirestore(sensorBaseline)
-
-                        statusText = if (result.isSuccess)
-                            "Calibration complete ✓  pitch=${"%.1f".format(newPitch)}°  roll=${"%.1f".format(newRoll)}°"
-                        else
-                            "Saved locally (Firestore failed: ${result.exceptionOrNull()?.message})"
-
-                        // Mark ESP32 doc as acknowledged so it doesn't re-trigger
+                    if (!isRollAcceptable || !isPitchAcceptable) {
+                        // Reject bad calibration
+                        statusText = "Calibration rejected (Sensor roll: ${"%.1f".format(newRoll)}°, pitch: ${"%.1f".format(newPitch)}°). Sit straight and try again."
+                        calibrationTriggered = false
+                        stableFrames = 0
                         Firebase.firestore
                             .collection("esp32")
                             .document("calibration")
-                            .update("status", "acknowledged")
+                            .update("status", "rejected")
+                    } else {
+                        espBaselineSaved = true
+                        statusText = "ESP32 calibrated! Saving baseline…"
+                        // Success beep tone
+                        playBeepTone(ToneGenerator.TONE_PROP_ACK, 350)
+
+                        scope.launch {
+                            // Build baseline from ESP32 sensor values
+                            val sensorBaseline = Baseline(
+                                pitch = newPitch,
+                                roll = newRoll,
+                                sampleCount = 1
+                            )
+                            capturedBaseline = sensorBaseline
+
+                            val result = saveBaselineToFirestore(sensorBaseline)
+
+                            statusText = if (result.isSuccess)
+                                "Calibration complete ✓  pitch=${"%.1f".format(newPitch)}°  roll=${"%.1f".format(newRoll)}°"
+                            else
+                                "Saved locally (Firestore failed: ${result.exceptionOrNull()?.message})"
+
+                            // Mark ESP32 doc as acknowledged so it doesn't re-trigger
+                            Firebase.firestore
+                                .collection("esp32")
+                                .document("calibration")
+                                .update("status", "acknowledged")
+                        }
                     }
                 }
             }
@@ -126,13 +155,18 @@ fun CalibrationScreen(navController: NavController) {
                     } else {
                         statusText = metrics.reason
                         cvaValue = metrics.cva
+                        lateralTiltValue = metrics.lateralTilt
+                        // Only increment stable frames when posture quality passes ALL gates (CVA, lateral tilt, alignment)
                         stableFrames = if (metrics.isCorrect) stableFrames + 1 else 0
 
                         if (stableFrames >= REQUIRED_STABLE_FRAMES) {
                             calibrationTriggered = true
-                            statusText = "Hold still — waiting for ESP32 to calibrate…"
+                            statusText = "Good posture captured! Waiting for ESP32 to calibrate…"
 
-                            // Tell ESP32 to start calibration via Firebase
+                            // Produce immediate beep sound on phone
+                            playBeepTone(ToneGenerator.TONE_PROP_BEEP, 300)
+
+                            // Tell ESP32 to start calibration & beep buzzer via Firebase
                             Firebase.firestore
                                 .collection("esp32")
                                 .document("calibration")
@@ -140,7 +174,9 @@ fun CalibrationScreen(navController: NavController) {
                                     hashMapOf(
                                         "requested" to true,
                                         "status" to "pending",
-                                        "progress" to 0
+                                        "progress" to 0,
+                                        "buzzer" to true,
+                                        "beep" to true
                                     )
                                 )
                         }
@@ -160,10 +196,15 @@ fun CalibrationScreen(navController: NavController) {
                     Text(statusText, color = Color.White, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
 
-                    // Camera CVA reading (only relevant before calibration triggers)
+                    // Camera readings (CVA / Pitch and Lateral Tilt / Roll)
                     if (!calibrationTriggered) {
                         Text(
-                            "CVA: ${"%.1f".format(cvaValue)}°",
+                            "CVA (Pitch): ${"%.1f".format(cvaValue)}°",
+                            color = Color.White,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            "Lateral Tilt (Roll): ${"%.1f".format(lateralTiltValue)}°",
                             color = Color.White,
                             fontSize = 14.sp
                         )
