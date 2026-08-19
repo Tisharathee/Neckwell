@@ -170,6 +170,17 @@ fun HourlyBarChart(hourlyData: List<Pair<String, Float>>) {
         return
     }
 
+    val animationProgress = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(hourlyData) {
+        animationProgress.snapTo(0f)
+        if (hourlyData.isNotEmpty()) {
+            animationProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = androidx.compose.animation.core.tween(durationMillis = 1000, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+            )
+        }
+    }
+
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
@@ -181,14 +192,14 @@ fun HourlyBarChart(hourlyData: List<Pair<String, Float>>) {
         val chartHeight = size.height - 40.dp.toPx()
 
         hourlyData.forEachIndexed { index, (time, score) ->
-            Log.d("Analytics", "Drawing bar for $time with score $score")
-            val barHeight = (score / maxScore) * chartHeight
+            val finalBarHeight = (score / maxScore) * chartHeight
+            val barHeight = finalBarHeight * animationProgress.value
             val x = (index * 2 + 0.5f) * barWidth
 
             val color = when {
-                score >= 80 -> Color(0xFF4CAF50)
+                score >= 80 -> com.humblecoders.neckwell.ui.theme.AccentTeal
                 score >= 60 -> Color(0xFFFFA726)
-                else -> Color(0xFFEF5350)
+                else -> com.humblecoders.neckwell.ui.theme.AlertCoral
             }
 
             drawRect(
@@ -219,10 +230,10 @@ fun HourlyBarChart(hourlyData: List<Pair<String, Float>>) {
 @Composable
 fun PostureDistributionChart(distribution: Map<String, Int>) {
     val postureTypes = listOf(
-        Triple("Excellent", "😊", Color(0xFF4CAF50)),
-        Triple("Good", "🙂", Color(0xFF8BC34A)),
+        Triple("Excellent", "😊", com.humblecoders.neckwell.ui.theme.AccentTeal),
+        Triple("Good", "🙂", com.humblecoders.neckwell.ui.theme.PrimaryBlue),
         Triple("Okay", "😐", Color(0xFFFFA726)),
-        Triple("Poor", "😕", Color(0xFFEF5350))
+        Triple("Poor", "😕", com.humblecoders.neckwell.ui.theme.AlertCoral)
     )
 
     Row(
@@ -233,9 +244,20 @@ fun PostureDistributionChart(distribution: Map<String, Int>) {
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.Bottom
     ) {
-        postureTypes.forEach { (label, emoji, color) ->
+        postureTypes.forEachIndexed { index, (label, emoji, color) ->
             val percentage = distribution[label] ?: 0
-            val barHeight = if (percentage > 0) (percentage * 1.2f).coerceIn(20f, 140f) else 20f
+            val targetHeight = if (percentage > 0) (percentage * 1.2f).coerceIn(20f, 140f) else 20f
+
+            var isAnimated by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                kotlinx.coroutines.delay(index * 150L) // Staggered animation
+                isAnimated = true
+            }
+
+            val animatedHeight by androidx.compose.animation.core.animateDpAsState(
+                targetValue = if (isAnimated) targetHeight.dp else 0.dp,
+                animationSpec = androidx.compose.animation.core.tween(800, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+            )
 
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -244,8 +266,8 @@ fun PostureDistributionChart(distribution: Map<String, Int>) {
                 Box(
                     modifier = Modifier
                         .width(50.dp)
-                        .height(barHeight.dp)
-                        .background(color, RoundedCornerShape(8.dp))
+                        .height(animatedHeight)
+                        .background(color, RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))

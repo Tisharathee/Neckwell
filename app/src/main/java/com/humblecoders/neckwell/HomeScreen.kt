@@ -1,5 +1,15 @@
 package com.humblecoders.neckwell
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -157,27 +167,77 @@ fun HomeScreen() {
                         text = "Current Posture",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 24.dp)
+                        modifier = Modifier.padding(bottom = 16.dp)
                     )
 
-                    Text(
-                        text = currentPosture?.posture?.let { getPostureEmoji(it) } ?: "😊",
-                        fontSize = 80.sp,
-                        modifier = Modifier.padding(vertical = 16.dp)
-                    )
+                    if (currentPosture == null) {
+                        // Skeleton Loader
+                        val infiniteTransition = rememberInfiniteTransition()
+                        val alpha by infiniteTransition.animateFloat(
+                            initialValue = 0.3f,
+                            targetValue = 0.7f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(1000),
+                                repeatMode = RepeatMode.Reverse
+                            )
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(120.dp)
+                                .padding(16.dp)
+                                .background(Color.LightGray.copy(alpha = alpha), androidx.compose.foundation.shape.CircleShape)
+                        )
+                        Box(modifier = Modifier.padding(top = 16.dp).height(24.dp).width(120.dp).background(Color.LightGray.copy(alpha = alpha), RoundedCornerShape(4.dp)))
+                    } else {
+                        // Animated Ring
+                        val isGood = currentPosture?.posture?.contains("Good", ignoreCase = true) == true
+                        val targetColor = if (isGood) com.humblecoders.neckwell.ui.theme.AccentTeal else com.humblecoders.neckwell.ui.theme.AlertCoral
+                        val animatedColor by animateColorAsState(targetValue = targetColor, animationSpec = tween(1000))
+                        
+                        val infiniteTransition = rememberInfiniteTransition()
+                        val pulseScale by infiniteTransition.animateFloat(
+                            initialValue = 0.95f,
+                            targetValue = 1.05f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(1500, easing = FastOutSlowInEasing),
+                                repeatMode = RepeatMode.Reverse
+                            )
+                        )
 
-                    Text(
-                        text = currentPosture?.posture ?: "Good posture",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(16.dp)) {
+                            Canvas(modifier = Modifier.size(120.dp)) {
+                                val strokeWidth = 8.dp.toPx()
+                                drawCircle(color = Color.LightGray.copy(alpha = 0.3f), style = Stroke(strokeWidth))
+                                drawCircle(
+                                    color = animatedColor.copy(alpha = 0.3f),
+                                    radius = size.minDimension / 2 * pulseScale,
+                                    style = Stroke(strokeWidth * 0.5f)
+                                )
+                                drawArc(
+                                    color = animatedColor,
+                                    startAngle = -90f,
+                                    sweepAngle = if (isGood) 360f else 270f,
+                                    useCenter = false,
+                                    style = Stroke(strokeWidth, cap = StrokeCap.Round)
+                                )
+                            }
+                            Text(text = getPostureEmoji(currentPosture?.posture ?: ""), fontSize = 48.sp)
+                        }
 
-                    Text(
-                        text = "Score: ${currentPosture?.posture?.let { calculatePostureScore(it) } ?: 85}%",
-                        fontSize = 18.sp,
-                        color = Color.Gray,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
+                        Text(
+                            text = currentPosture?.posture ?: "Good posture",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = animatedColor
+                        )
+
+                        Text(
+                            text = "Score: ${calculatePostureScore(currentPosture?.posture ?: "")}%",
+                            fontSize = 18.sp,
+                            color = Color.Gray,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
                 }
             }
 

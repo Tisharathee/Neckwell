@@ -76,6 +76,9 @@ fun CalibrationScreen(navController: NavController) {
     var espRoll by remember { mutableFloatStateOf(0f) }
     var espBaselineSaved by remember { mutableStateOf(false) }
 
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    var showFlash by remember { mutableStateOf(false) }
+
     // Listen to ESP32 calibration document in real time
     LaunchedEffect(Unit) {
         Firebase.firestore
@@ -109,11 +112,19 @@ fun CalibrationScreen(navController: NavController) {
                             .collection("esp32")
                             .document("calibration")
                             .update("status", "rejected")
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                     } else {
                         espBaselineSaved = true
                         statusText = "ESP32 calibrated! Saving baseline…"
                         // Success beep tone
                         playBeepTone(ToneGenerator.TONE_PROP_ACK, 350)
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        showFlash = true
+                        
+                        scope.launch {
+                            kotlinx.coroutines.delay(300)
+                            showFlash = false
+                        }
 
                         scope.launch {
                             // Build baseline from ESP32 sensor values
@@ -165,6 +176,7 @@ fun CalibrationScreen(navController: NavController) {
 
                             // Produce immediate beep sound on phone
                             playBeepTone(ToneGenerator.TONE_PROP_BEEP, 300)
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
 
                             // Tell ESP32 to start calibration & beep buzzer via Firebase
                             Firebase.firestore
@@ -184,6 +196,15 @@ fun CalibrationScreen(navController: NavController) {
                 }
             )
 
+            // Flash overlay for micro-interaction
+            androidx.compose.animation.AnimatedVisibility(
+                visible = showFlash,
+                enter = androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.fadeOut()
+            ) {
+                Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.5f)))
+            }
+
             // Status overlay card
             Card(
                 modifier = Modifier
@@ -193,7 +214,9 @@ fun CalibrationScreen(navController: NavController) {
             ) {
                 Column(Modifier.padding(16.dp)) {
 
-                    Text(statusText, color = Color.White, fontWeight = FontWeight.Bold)
+                    androidx.compose.animation.Crossfade(targetState = statusText) { text ->
+                        Text(text, color = Color.White, fontWeight = FontWeight.Bold)
+                    }
                     Spacer(Modifier.height(4.dp))
 
                     // Camera readings (CVA / Pitch and Lateral Tilt / Roll)
