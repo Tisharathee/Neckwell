@@ -121,17 +121,6 @@ fun calculatePostureScore(posture: String): Int {
     }
 }
 
-fun getPostureEmoji(posture: String): String {
-    return when (posture) {
-        "Excellent" -> "😊"
-        "Good" -> "🙂"
-        "Okay" -> "😐"
-        "Poor" -> "😕"
-        "Very poor" -> "☹️"
-        else -> "😐"
-    }
-}
-
 fun calculateGoodPosturePercentage(postureDataList: List<PostureData>): Int {
     if (postureDataList.isEmpty()) return 0
 

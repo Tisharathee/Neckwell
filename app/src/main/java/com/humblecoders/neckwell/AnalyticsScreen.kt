@@ -1,157 +1,126 @@
 package com.humblecoders.neckwell
 
-import android.util.Log
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.EmojiEvents
+import androidx.compose.material.icons.outlined.QueryStats
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.humblecoders.neckwell.ui.theme.AccentTeal
+import com.humblecoders.neckwell.ui.theme.AccentTealDark
+import com.humblecoders.neckwell.ui.theme.AlertCoral
+import com.humblecoders.neckwell.ui.theme.BackgroundGray
+import com.humblecoders.neckwell.ui.theme.InfoBlue
+import com.humblecoders.neckwell.ui.theme.TextDark
+import com.humblecoders.neckwell.ui.theme.TextGray
+import com.humblecoders.neckwell.ui.theme.WarningAmber
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
 fun AnalyticsScreen() {
     var todayData by remember { mutableStateOf<List<PostureData>>(emptyList()) }
     val scope = rememberCoroutineScope()
-
-    val refreshData = {
-        scope.launch {
-            todayData = fetchTodayPostureData()
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        refreshData()
-    }
+    fun refresh() { scope.launch { todayData = fetchTodayPostureData() } }
+    LaunchedEffect(Unit) { refresh() }
 
     val hourlyData = remember(todayData) { getHourlyPostureQuality(todayData) }
     val distribution = remember(todayData) { getPostureDistribution(todayData) }
+    val average = remember(todayData) {
+        if (todayData.isEmpty()) 0 else todayData.map { calculatePostureScore(it.posture) }.average().toInt()
+    }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF5F5F5))
-    ) {
-        // Header
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF2196F3))
-                .padding(vertical = 32.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    onClick = { refreshData() },
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Text(
-                        text = "🔄",
-                        fontSize = 24.sp
-                    )
+    Column(Modifier.fillMaxSize().background(BackgroundGray)) {
+        NeckWellHeader(
+            title = "Analytics",
+            subtitle = "Daily posture analysis",
+            compact = true,
+            action = {
+                IconButton(onClick = ::refresh) {
+                    Icon(Icons.Outlined.Refresh, "Refresh analytics", tint = Color.White)
                 }
-                
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "Analytics",
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Text(
-                        text = "Daily Posture Analysis",
-                        fontSize = 18.sp,
-                        color = Color.White.copy(alpha = 0.9f)
-                    )
-                }
-                
-                Spacer(modifier = Modifier.size(48.dp))
             }
-        }
-
+        )
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Hourly Posture Quality Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp)
+            NeckWellCard {
+                Row(
+                    Modifier.fillMaxWidth().padding(20.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    ) {
-                        Text(
-                            text = "📊",
-                            fontSize = 24.sp,
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
-                        Text(
-                            text = "Hourly Posture Quality",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                    IconTile(Icons.Outlined.QueryStats, AccentTealDark, size = 52)
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Today's average", color = TextGray, fontSize = 13.sp)
+                        Text("$average% posture score", color = TextDark, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Text("Based on ${todayData.size} recorded readings", color = TextGray, fontSize = 12.sp)
                     }
-
-                    HourlyBarChart(hourlyData = hourlyData)
                 }
             }
 
-            // Posture Distribution Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    ) {
-                        Text(
-                            text = "🏆",
-                            fontSize = 24.sp,
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
-                        Text(
-                            text = "Posture Distribution",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    PostureDistributionChart(distribution = distribution)
-                }
+            AnalyticsCard(Icons.Outlined.BarChart, "Hourly posture quality", "Your score throughout the day") {
+                HourlyBarChart(hourlyData)
             }
+            AnalyticsCard(Icons.Outlined.EmojiEvents, "Posture distribution", "How today's readings break down") {
+                PostureDistributionChart(distribution)
+            }
+            Spacer(Modifier.height(4.dp))
+        }
+    }
+}
+
+@Composable
+private fun AnalyticsCard(icon: ImageVector, title: String, subtitle: String, content: @Composable () -> Unit) {
+    NeckWellCard {
+        Column(Modifier.fillMaxWidth().padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconTile(icon, InfoBlue, size = 44)
+                Spacer(Modifier.width(12.dp))
+                SectionHeading(title, subtitle)
+            }
+            Spacer(Modifier.height(18.dp))
+            content()
         }
     }
 }
@@ -160,128 +129,72 @@ fun AnalyticsScreen() {
 fun HourlyBarChart(hourlyData: List<Pair<String, Float>>) {
     if (hourlyData.isEmpty()) {
         Text(
-            text = "No data available for today",
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(32.dp),
-            textAlign = TextAlign.Center,
-            color = Color.Gray
+            "No posture readings yet today",
+            Modifier.fillMaxWidth().padding(34.dp),
+            color = TextGray,
+            textAlign = TextAlign.Center
         )
         return
     }
-
-    val animationProgress = remember { androidx.compose.animation.core.Animatable(0f) }
+    val progress = remember { Animatable(0f) }
     LaunchedEffect(hourlyData) {
-        animationProgress.snapTo(0f)
-        if (hourlyData.isNotEmpty()) {
-            animationProgress.animateTo(
-                targetValue = 1f,
-                animationSpec = androidx.compose.animation.core.tween(durationMillis = 1000, easing = androidx.compose.animation.core.FastOutSlowInEasing)
-            )
-        }
+        progress.snapTo(0f)
+        progress.animateTo(1f, tween(900, easing = FastOutSlowInEasing))
     }
-
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(200.dp)
-            .padding(top = 16.dp)
-    ) {
-        val barWidth = size.width / (hourlyData.size * 2)
-        val maxScore = 100f
-        val chartHeight = size.height - 40.dp.toPx()
-
-        hourlyData.forEachIndexed { index, (time, score) ->
-            val finalBarHeight = (score / maxScore) * chartHeight
-            val barHeight = finalBarHeight * animationProgress.value
-            val x = (index * 2 + 0.5f) * barWidth
-
+    Canvas(Modifier.fillMaxWidth().height(190.dp)) {
+        val chartHeight = size.height - 28.dp.toPx()
+        val slotWidth = size.width / hourlyData.size
+        val barWidth = (slotWidth * 0.48f).coerceAtMost(34.dp.toPx())
+        drawLine(Color(0xFFE4EAEE), Offset(0f, chartHeight), Offset(size.width, chartHeight), 1.dp.toPx())
+        hourlyData.forEachIndexed { index, (_, score) ->
+            val height = (score / 100f) * chartHeight * progress.value
             val color = when {
-                score >= 80 -> com.humblecoders.neckwell.ui.theme.AccentTeal
-                score >= 60 -> Color(0xFFFFA726)
-                else -> com.humblecoders.neckwell.ui.theme.AlertCoral
+                score >= 80 -> AccentTeal
+                score >= 60 -> WarningAmber
+                else -> AlertCoral
             }
-
-            drawRect(
+            drawRoundRect(
                 color = color,
-                topLeft = Offset(x, chartHeight - barHeight),
-                size = Size(barWidth * 0.8f, barHeight)
+                topLeft = Offset(index * slotWidth + (slotWidth - barWidth) / 2f, chartHeight - height),
+                size = Size(barWidth, height),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(8.dp.toPx())
             )
         }
     }
-
-    // Time labels
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly
-    ) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
         hourlyData.forEach { (time, _) ->
-            Text(
-                text = time,
-                fontSize = 10.sp,
-                color = Color.Gray,
-                modifier = Modifier.width(40.dp),
-                textAlign = TextAlign.Center
-            )
+            Text(time, color = TextGray, fontSize = 10.sp, textAlign = TextAlign.Center)
         }
     }
 }
 
+private data class DistributionStyle(val label: String, val color: Color)
+
 @Composable
 fun PostureDistributionChart(distribution: Map<String, Int>) {
     val postureTypes = listOf(
-        Triple("Excellent", "😊", com.humblecoders.neckwell.ui.theme.AccentTeal),
-        Triple("Good", "🙂", com.humblecoders.neckwell.ui.theme.PrimaryBlue),
-        Triple("Okay", "😐", Color(0xFFFFA726)),
-        Triple("Poor", "😕", com.humblecoders.neckwell.ui.theme.AlertCoral)
+        DistributionStyle("Excellent", AccentTeal),
+        DistributionStyle("Good", InfoBlue),
+        DistributionStyle("Okay", WarningAmber),
+        DistributionStyle("Poor", AlertCoral)
     )
-
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(180.dp)
-            .padding(vertical = 16.dp),
+        Modifier.fillMaxWidth().height(205.dp).padding(top = 8.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.Bottom
     ) {
-        postureTypes.forEachIndexed { index, (label, emoji, color) ->
-            val percentage = distribution[label] ?: 0
-            val targetHeight = if (percentage > 0) (percentage * 1.2f).coerceIn(20f, 140f) else 20f
-
-            var isAnimated by remember { mutableStateOf(false) }
-            LaunchedEffect(Unit) {
-                kotlinx.coroutines.delay(index * 150L) // Staggered animation
-                isAnimated = true
-            }
-
-            val animatedHeight by androidx.compose.animation.core.animateDpAsState(
-                targetValue = if (isAnimated) targetHeight.dp else 0.dp,
-                animationSpec = androidx.compose.animation.core.tween(800, easing = androidx.compose.animation.core.FastOutSlowInEasing)
-            )
-
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.width(70.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .width(50.dp)
-                        .height(animatedHeight)
-                        .background(color, RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = emoji,
-                    fontSize = 28.sp
-                )
-
-                Text(
-                    text = "$percentage%",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
+        postureTypes.forEachIndexed { index, style ->
+            val percentage = distribution[style.label] ?: 0
+            val targetHeight = if (percentage > 0) (percentage * 1.15f).coerceIn(20f, 120f) else 10f
+            var animate by remember { mutableStateOf(false) }
+            LaunchedEffect(distribution) { delay(index * 120L); animate = true }
+            val height by animateDpAsState(if (animate) targetHeight.dp else 0.dp, tween(700), label = style.label)
+            Column(Modifier.width(68.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("$percentage%", color = style.color, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Spacer(Modifier.height(7.dp))
+                Box(Modifier.width(46.dp).height(height).background(style.color, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp)))
+                Spacer(Modifier.height(8.dp))
+                Text(style.label, color = TextGray, fontSize = 11.sp, textAlign = TextAlign.Center)
             }
         }
     }

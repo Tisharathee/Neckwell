@@ -2,19 +2,54 @@ package com.humblecoders.neckwell
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BatteryFull
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material.icons.outlined.RadioButtonChecked
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Vibration
+import androidx.compose.material.icons.outlined.VolumeUp
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.humblecoders.neckwell.ui.theme.AccentTealDark
+import com.humblecoders.neckwell.ui.theme.BackgroundGray
+import com.humblecoders.neckwell.ui.theme.BorderSoft
+import com.humblecoders.neckwell.ui.theme.InfoBlue
+import com.humblecoders.neckwell.ui.theme.MintSurface
+import com.humblecoders.neckwell.ui.theme.TextDark
+import com.humblecoders.neckwell.ui.theme.TextGray
 
 @Composable
 fun SettingsScreen(navController: NavController) {
@@ -22,198 +57,69 @@ fun SettingsScreen(navController: NavController) {
     var hapticFeedback by remember { mutableStateOf(true) }
     var soundAlerts by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF5F5F5))
-    ) {
-        // Header
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF2196F3))
-                .padding(vertical = 32.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "⚙️ Settings",
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                Text(
-                    text = "Customize Your Experience",
-                    fontSize = 18.sp,
-                    color = Color.White.copy(alpha = 0.9f)
-                )
-            }
-        }
-
+    Column(Modifier.fillMaxSize().background(BackgroundGray)) {
+        NeckWellHeader("Settings", "Customize your experience", compact = true)
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Notifications Section
-            Text(
-                text = "Notifications",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.Gray,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
-            )
+            SettingsSection("Notifications") {
+                SettingsToggleItem(Icons.Outlined.NotificationsNone, "Push notifications", "Receive posture alerts and reminders", notificationsEnabled) { notificationsEnabled = it }
+                SettingsToggleItem(Icons.Outlined.Vibration, "Haptic feedback", "Vibrate on poor posture detection", hapticFeedback) { hapticFeedback = it }
+                SettingsToggleItem(Icons.Outlined.VolumeUp, "Sound alerts", "Play sound for posture warnings", soundAlerts) { soundAlerts = it }
+            }
 
-            SettingsToggleItem(
-                icon = "🔔",
-                title = "Push Notifications",
-                description = "Receive posture alerts and reminders",
-                checked = notificationsEnabled,
-                onCheckedChange = { notificationsEnabled = it }
-            )
+            SettingsSection("Device") {
+                SettingsClickableItem(Icons.Outlined.Link, "Connected device", "NeckWell Sensor v2.1") { }
+                SettingsClickableItem(Icons.Outlined.BatteryFull, "Battery status", "85% charged") { }
+            }
 
-            SettingsToggleItem(
-                icon = "📳",
-                title = "Haptic Feedback",
-                description = "Vibrate on poor posture detection",
-                checked = hapticFeedback,
-                onCheckedChange = { hapticFeedback = it }
-            )
+            SettingsSection("Calibration") {
+                SettingsClickableItem(Icons.Outlined.Tune, "Calibrate posture", "Set your neutral posture baseline") { navController.navigate("calibration") }
+            }
 
-            SettingsToggleItem(
-                icon = "🔊",
-                title = "Sound Alerts",
-                description = "Play sound for posture warnings",
-                checked = soundAlerts,
-                onCheckedChange = { soundAlerts = it }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Device Section
-            Text(
-                text = "Device",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.Gray,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
-            )
-
-            SettingsClickableItem(
-                icon = "🔗",
-                title = "Connected Device",
-                description = "NeckWell Sensor v2.1",
-                onClick = { }
-            )
-
-            SettingsClickableItem(
-                icon = "🔋",
-                title = "Battery Status",
-                description = "85% charged",
-                onClick = { }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-            // Calibration Section
-            Text(
-                text = "Calibration",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.Gray,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
-            )
-
-            SettingsClickableItem(
-                icon = "🎯",
-                title = "Calibrate Posture",
-                description = "Set your neutral posture baseline",
-                onClick = { navController.navigate("calibration") }
-            )
-
-            // About Section
-            Text(
-                text = "About",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.Gray,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
-            )
-
-            SettingsClickableItem(
-                icon = "ℹ️",
-                title = "App Version",
-                description = "1.0.0",
-                onClick = { }
-            )
-
-            SettingsClickableItem(
-                icon = "📄",
-                title = "Privacy Policy",
-                description = "View our privacy policy",
-                onClick = { }
-            )
-
-            SettingsClickableItem(
-                icon = "📧",
-                title = "Contact Support",
-                description = "Get help with NeckWell",
-                onClick = { }
-            )
+            SettingsSection("About") {
+                SettingsClickableItem(Icons.Outlined.Info, "App version", "1.0.0") { }
+                SettingsClickableItem(Icons.Outlined.Description, "Privacy policy", "View our privacy policy") { }
+                SettingsClickableItem(Icons.Outlined.Email, "Contact support", "Get help with NeckWell") { }
+            }
+            Spacer(Modifier.height(6.dp))
         }
     }
 }
 
 @Composable
-fun SettingsToggleItem(
-    icon: String,
+private fun SettingsSection(title: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(title.uppercase(), color = TextGray, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
+        content()
+    }
+}
+
+@Composable
+private fun SettingsToggleItem(
+    icon: ImageVector,
     title: String,
     description: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = icon,
-                fontSize = 28.sp,
-                modifier = Modifier.padding(end = 16.dp)
-            )
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = title,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(bottom = 2.dp)
-                )
-
-                Text(
-                    text = description,
-                    fontSize = 13.sp,
-                    color = Color.Gray
-                )
+    NeckWellCard {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconTile(icon, InfoBlue, size = 44)
+            Spacer(Modifier.width(13.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(description, color = TextGray, style = MaterialTheme.typography.bodyMedium)
             }
-
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
-                    checkedTrackColor = Color(0xFF2196F3)
+                    checkedTrackColor = AccentTealDark,
+                    uncheckedThumbColor = Color.White,
+                    uncheckedTrackColor = BorderSoft
                 )
             )
         }
@@ -221,54 +127,24 @@ fun SettingsToggleItem(
 }
 
 @Composable
-fun SettingsClickableItem(
-    icon: String,
+private fun SettingsClickableItem(
+    icon: ImageVector,
     title: String,
     description: String,
     onClick: () -> Unit
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
+    NeckWellCard {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = icon,
-                fontSize = 28.sp,
-                modifier = Modifier.padding(end = 16.dp)
-            )
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = title,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(bottom = 2.dp)
-                )
-
-                Text(
-                    text = description,
-                    fontSize = 13.sp,
-                    color = Color.Gray
-                )
+            IconTile(icon, AccentTealDark, background = MintSurface, size = 44)
+            Spacer(Modifier.width(13.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(description, color = TextGray, style = MaterialTheme.typography.bodyMedium)
             }
-
-            Text(
-                text = "›",
-                fontSize = 24.sp,
-                color = Color.Gray
-            )
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = TextGray, modifier = Modifier.size(21.dp))
         }
     }
 }
