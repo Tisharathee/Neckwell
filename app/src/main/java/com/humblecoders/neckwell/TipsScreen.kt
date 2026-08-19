@@ -1,147 +1,98 @@
 package com.humblecoders.neckwell
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Bedtime
+import androidx.compose.material.icons.outlined.DesktopWindows
+import androidx.compose.material.icons.outlined.EventSeat
+import androidx.compose.material.icons.outlined.FitnessCenter
+import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.SelfImprovement
+import androidx.compose.material.icons.outlined.Smartphone
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.humblecoders.neckwell.ui.theme.AccentTealDark
+import com.humblecoders.neckwell.ui.theme.BackgroundGray
+import com.humblecoders.neckwell.ui.theme.InfoBlue
+import com.humblecoders.neckwell.ui.theme.Purple
+import com.humblecoders.neckwell.ui.theme.TextDark
+import com.humblecoders.neckwell.ui.theme.TextGray
+import com.humblecoders.neckwell.ui.theme.WarningAmber
+
+private data class PostureTip(val icon: ImageVector, val title: String, val description: String, val color: Color)
+
+private val postureTips = listOf(
+    PostureTip(Icons.Outlined.EventSeat, "Sit correctly", "Keep your back supported, shoulders relaxed, and both feet flat on the floor.", AccentTealDark),
+    PostureTip(Icons.Outlined.DesktopWindows, "Position your monitor", "Place your screen at eye level and roughly an arm's length from your face.", InfoBlue),
+    PostureTip(Icons.Outlined.Timer, "Take regular breaks", "Stand, stretch, or walk for a few minutes every 30 minutes.", WarningAmber),
+    PostureTip(Icons.Outlined.SelfImprovement, "Release neck tension", "Slowly tilt your head side to side without forcing the movement.", Purple),
+    PostureTip(Icons.Outlined.Visibility, "Protect your eye line", "Keep the top third of your monitor close to eye level to avoid looking down.", InfoBlue),
+    PostureTip(Icons.Outlined.FitnessCenter, "Strengthen your core", "A stronger core makes neutral sitting posture easier to maintain.", AccentTealDark),
+    PostureTip(Icons.Outlined.Bedtime, "Sleep in alignment", "Use a supportive pillow that keeps your neck in line with your spine.", Purple),
+    PostureTip(Icons.Outlined.Smartphone, "Lift your phone", "Bring your phone toward eye level instead of bending your neck toward it.", WarningAmber)
+)
 
 @Composable
 fun TipsScreen() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF5F5F5))
-    ) {
-        // Header
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF2196F3))
-                .padding(vertical = 32.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "💡 Tips",
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                Text(
-                    text = "Improve Your Posture",
-                    fontSize = 18.sp,
-                    color = Color.White.copy(alpha = 0.9f)
-                )
-            }
-        }
-
+    Column(Modifier.fillMaxSize().background(BackgroundGray)) {
+        NeckWellHeader("Posture Tips", "Small habits, lasting relief", compact = true)
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            TipCard(
-                icon = "🪑",
-                title = "Sit Correctly",
-                description = "Keep your back straight and shoulders relaxed. Your feet should be flat on the floor."
-            )
-
-            TipCard(
-                icon = "💻",
-                title = "Monitor Position",
-                description = "Place your screen at eye level, about an arm's length away from your face."
-            )
-
-            TipCard(
-                icon = "⏰",
-                title = "Take Breaks",
-                description = "Stand up and stretch every 30 minutes. Walk around for a few minutes."
-            )
-
-            TipCard(
-                icon = "🧘",
-                title = "Neck Exercises",
-                description = "Gently tilt your head side to side and front to back to relieve tension."
-            )
-
-            TipCard(
-                icon = "👁️",
-                title = "Eye Level",
-                description = "Keep your monitor at or slightly below eye level to avoid neck strain."
-            )
-
-            TipCard(
-                icon = "💪",
-                title = "Strengthen Core",
-                description = "Strong core muscles help maintain good posture throughout the day."
-            )
-
-            TipCard(
-                icon = "🛏️",
-                title = "Sleep Right",
-                description = "Use a supportive pillow that keeps your neck aligned with your spine."
-            )
-
-            TipCard(
-                icon = "📱",
-                title = "Phone Usage",
-                description = "Hold your phone at eye level instead of looking down at it."
-            )
+            NeckWellCard {
+                Row(
+                    Modifier.fillMaxWidth().padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconTile(Icons.Outlined.Lightbulb, AccentTealDark, size = 50)
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Text("Build a posture-friendly day", color = TextDark, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                        Text("Choose one tip to practice consistently this week.", color = TextGray, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+            postureTips.forEachIndexed { index, tip ->
+                TipCard(tip, index + 1)
+            }
         }
     }
 }
 
 @Composable
-fun TipCard(
-    icon: String,
-    title: String,
-    description: String
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
+private fun TipCard(tip: PostureTip, number: Int) {
+    NeckWellCard {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            Modifier.fillMaxWidth().padding(18.dp),
             verticalAlignment = Alignment.Top
         ) {
-            Text(
-                text = icon,
-                fontSize = 32.sp,
-                modifier = Modifier.padding(end = 16.dp)
-            )
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = title,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-
-                Text(
-                    text = description,
-                    fontSize = 14.sp,
-                    color = Color.Gray,
-                    lineHeight = 20.sp
-                )
+            IconTile(tip.icon, tip.color, size = 48)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("TIP ${number.toString().padStart(2, '0')}", color = tip.color, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text(tip.title, color = TextDark, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text(tip.description, color = TextGray, style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
