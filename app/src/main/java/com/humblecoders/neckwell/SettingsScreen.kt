@@ -52,11 +52,37 @@ import com.humblecoders.neckwell.ui.theme.MintSurface
 import com.humblecoders.neckwell.ui.theme.TextDark
 import com.humblecoders.neckwell.ui.theme.TextGray
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.ToneGenerator
+import android.net.Uri
+import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+
 @Composable
 fun SettingsScreen(navController: NavController) {
-    var notificationsEnabled by remember { mutableStateOf(true) }
-    var hapticFeedback by remember { mutableStateOf(true) }
-    var soundAlerts by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    NeckWellPreferences.init(context)
+
+    val notificationsEnabled by NeckWellPreferences.notificationsEnabled.collectAsState()
+    val hapticFeedback by NeckWellPreferences.hapticFeedbackEnabled.collectAsState()
+    val soundAlerts by NeckWellPreferences.soundAlertsEnabled.collectAsState()
+    val deviceStatus by DeviceStatusManager.deviceStatus.collectAsState()
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        NeckWellPreferences.setNotificationsEnabled(context, isGranted)
+        if (!isGranted) {
+            Toast.makeText(context, "Notification permission denied", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Column(Modifier.fillMaxSize().background(BackgroundGray)) {
         NeckWellHeader("Settings", "Customize your experience", compact = true)
@@ -65,24 +91,125 @@ fun SettingsScreen(navController: NavController) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             SettingsSection("Notifications") {
-                SettingsToggleItem(Icons.Outlined.NotificationsNone, "Push notifications", "Receive posture alerts and reminders", notificationsEnabled) { notificationsEnabled = it }
-                SettingsToggleItem(Icons.Outlined.Vibration, "Haptic feedback", "Vibrate on poor posture detection", hapticFeedback) { hapticFeedback = it }
-                SettingsToggleItem(Icons.Outlined.VolumeUp, "Sound alerts", "Play sound for posture warnings", soundAlerts) { soundAlerts = it }
+                SettingsToggleItem(
+                    icon = Icons.Outlined.NotificationsNone,
+                    title = "Push notifications",
+                    description = "Receive posture alerts and reminders",
+                    checked = notificationsEnabled
+                ) { checked ->
+                    if (checked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        val hasPermission = ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (!hasPermission) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            return@SettingsToggleItem
+                        }
+                    }
+                    NeckWellPreferences.setNotificationsEnabled(context, checked)
+                }
+
+                SettingsToggleItem(
+                    icon = Icons.Outlined.Vibration,
+                    title = "Haptic feedback",
+                    description = "Vibrate on poor posture detection",
+                    checked = hapticFeedback
+                ) { checked ->
+                    NeckWellPreferences.setHapticFeedbackEnabled(context, checked)
+                    if (checked) {
+                        AlertManager.triggerHapticFeedback(context, 100L)
+                    }
+                }
+
+                SettingsToggleItem(
+                    icon = Icons.Outlined.VolumeUp,
+                    title = "Sound alerts",
+                    description = "Play sound for posture warnings",
+                    checked = soundAlerts
+                ) { checked ->
+                    NeckWellPreferences.setSoundAlertsEnabled(context, checked)
+                    if (checked) {
+                        AlertManager.playToneAlert(context, ToneGenerator.TONE_PROP_BEEP, 150)
+                    }
+                }
             }
 
             SettingsSection("Device") {
-                SettingsClickableItem(Icons.Outlined.Link, "Connected device", "NeckWell Sensor v2.1") { }
-                SettingsClickableItem(Icons.Outlined.BatteryFull, "Battery status", "85% charged") { }
+                val connectionLabel = when (deviceStatus.connectionState) {
+                    DeviceConnectionState.CONNECTED -> "Connected"
+                    DeviceConnectionState.CONNECTING -> "Connecting…"
+                    DeviceConnectionState.DISCONNECTED -> "Disconnected"
+                }
+                SettingsClickableItem(
+                    icon = Icons.Outlined.Link,
+                    title = "Connected device",
+                    description = "${deviceStatus.deviceName} • $connectionLabel"
+                ) {
+                    DeviceStatusManager.toggleConnection()
+                    val targetMsg = if (deviceStatus.connectionState == DeviceConnectionState.CONNECTED) "Disconnecting device…" else "Connecting to sensor…"
+                    Toast.makeText(context, targetMsg, Toast.LENGTH_SHORT).show()
+                }
+
+                val batteryColor = if (deviceStatus.isLowBattery) com.humblecoders.neckwell.ui.theme.AlertCoral else AccentTealDark
+                SettingsClickableItem(
+                    icon = Icons.Outlined.BatteryFull,
+                    title = "Battery status",
+                    description = "${deviceStatus.batteryLevel}% charged${if (deviceStatus.isLowBattery) " • Low Battery" else ""}",
+                    iconTint = batteryColor
+                ) {
+                    Toast.makeText(context, "Battery: ${deviceStatus.batteryLevel}%", Toast.LENGTH_SHORT).show()
+                }
             }
 
             SettingsSection("Calibration") {
-                SettingsClickableItem(Icons.Outlined.Tune, "Calibrate posture", "Set your neutral posture baseline") { navController.navigate("calibration") }
+                SettingsClickableItem(
+                    icon = Icons.Outlined.Tune,
+                    title = "Calibrate posture",
+                    description = "Set your neutral posture baseline"
+                ) {
+                    navController.navigate("calibration")
+                }
             }
 
             SettingsSection("About") {
-                SettingsClickableItem(Icons.Outlined.Info, "App version", "1.0.0") { }
-                SettingsClickableItem(Icons.Outlined.Description, "Privacy policy", "View our privacy policy") { }
-                SettingsClickableItem(Icons.Outlined.Email, "Contact support", "Get help with NeckWell") { }
+                SettingsClickableItem(
+                    icon = Icons.Outlined.Info,
+                    title = "App version",
+                    description = "1.0.0 (Build 1)"
+                ) {
+                    Toast.makeText(context, "NeckWell v1.0.0", Toast.LENGTH_SHORT).show()
+                }
+
+                SettingsClickableItem(
+                    icon = Icons.Outlined.Description,
+                    title = "Privacy policy",
+                    description = "View our privacy policy"
+                ) {
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://neckwell.com/privacy"))
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Privacy Policy: All sensor data is processed locally on your device.", Toast.LENGTH_LONG).show()
+                    }
+                }
+
+                SettingsClickableItem(
+                    icon = Icons.Outlined.Email,
+                    title = "Contact support",
+                    description = "Get help with NeckWell"
+                ) {
+                    try {
+                        val intent = Intent(Intent.ACTION_SENDTO).apply {
+                            data = Uri.parse("mailto:support@neckwell.com")
+                            putExtra(Intent.EXTRA_SUBJECT, "NeckWell Support Request")
+                            putExtra(Intent.EXTRA_TEXT, "Device: ${deviceStatus.deviceName}\nApp Version: 1.0.0\n\nPlease describe your issue:\n")
+                        }
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Please email us at support@neckwell.com", Toast.LENGTH_LONG).show()
+                    }
+                }
             }
             Spacer(Modifier.height(6.dp))
         }
@@ -132,6 +259,7 @@ private fun SettingsClickableItem(
     icon: ImageVector,
     title: String,
     description: String,
+    iconTint: Color = AccentTealDark,
     onClick: () -> Unit
 ) {
     NeckWellCard {
@@ -139,7 +267,7 @@ private fun SettingsClickableItem(
             Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconTile(icon, AccentTealDark, background = MintSurface, size = 44)
+            IconTile(icon, iconTint, background = MintSurface, size = 44)
             Spacer(Modifier.width(13.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)

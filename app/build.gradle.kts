@@ -42,6 +42,9 @@ android {
     androidResources {
         noCompress += "task"
     }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {

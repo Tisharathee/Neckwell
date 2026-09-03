@@ -39,7 +39,16 @@ class PoseLandmarkerHelper(
     }
 
     fun detect(imageProxy: ImageProxy) {
-        val bitmap = imageProxy.toBitmap()
+        val rawBitmap = imageProxy.toBitmap()
+        val rotation = imageProxy.imageInfo.rotationDegrees
+        val bitmap = if (rotation != 0) {
+            val matrix = android.graphics.Matrix().apply { postRotate(rotation.toFloat()) }
+            val rotated = android.graphics.Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
+            rawBitmap.recycle()
+            rotated
+        } else {
+            rawBitmap
+        }
         val mpImage = BitmapImageBuilder(bitmap).build()
         poseLandmarker?.detectAsync(mpImage, SystemClock.uptimeMillis())
         imageProxy.close()

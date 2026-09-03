@@ -34,13 +34,8 @@ import kotlinx.coroutines.launch
 
 private const val REQUIRED_STABLE_FRAMES = 30  // ~1 sec at 30fps
 
-private fun playBeepTone(toneType: Int = ToneGenerator.TONE_PROP_BEEP, durationMs: Int = 250) {
-    try {
-        val toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
-        toneGenerator.startTone(toneType, durationMs)
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
+private fun playBeepTone(toneType: Int = ToneGenerator.TONE_PROP_BEEP, durationMs: Int = 250, context: android.content.Context? = null) {
+    AlertManager.playToneAlert(context, toneType, durationMs)
 }
 
 @Composable

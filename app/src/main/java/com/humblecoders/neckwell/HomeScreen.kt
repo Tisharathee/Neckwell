@@ -74,9 +74,19 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.max
 
+import androidx.compose.material.icons.outlined.BatteryAlert
+import androidx.compose.material.icons.outlined.BatteryFull
+import androidx.compose.material.icons.outlined.Wifi
+import androidx.compose.material.icons.outlined.WifiOff
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
+
 @Composable
 fun HomeScreen() {
-    var isConnected by remember { mutableStateOf(true) }
+    val context = LocalContext.current
+    NeckWellPreferences.init(context)
+
+    val deviceStatus by DeviceStatusManager.deviceStatus.collectAsState()
     var currentPosture by remember { mutableStateOf<PostureData?>(null) }
     var todayData by remember { mutableStateOf<List<PostureData>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -85,13 +95,27 @@ fun HomeScreen() {
     fun refreshData() {
         scope.launch {
             loading = true
-            currentPosture = fetchLatestPosture()
+            val latest = fetchLatestPosture()
+            currentPosture = latest
             todayData = fetchTodayPostureData()
             loading = false
+
+            // Trigger alert if latest posture is poor
+            if (latest?.posture == "Poor" || latest?.posture == "Very poor") {
+                AlertManager.triggerBadPostureNotification(
+                    context,
+                    title = "Poor Posture Detected",
+                    message = "Current posture is ${latest.posture}. Please align your neck over your shoulders."
+                )
+                AlertManager.triggerHapticFeedback(context, 400L)
+            }
         }
     }
 
-    LaunchedEffect(Unit) { refreshData() }
+    LaunchedEffect(Unit) {
+        DeviceStatusManager.startListening()
+        refreshData()
+    }
 
     Column(Modifier.fillMaxSize().background(BackgroundGray)) {
         NeckWellHeader(
@@ -111,7 +135,10 @@ fun HomeScreen() {
                 .padding(horizontal = 16.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            ConnectionCard(isConnected = isConnected, onToggle = { isConnected = !isConnected })
+            ConnectionCard(
+                deviceStatus = deviceStatus,
+                onToggle = { DeviceStatusManager.toggleConnection() }
+            )
             PostureCard(currentPosture = currentPosture, loading = loading)
             SummaryCard(todayData)
             Spacer(Modifier.height(4.dp))
@@ -120,48 +147,145 @@ fun HomeScreen() {
 }
 
 @Composable
-private fun ConnectionCard(isConnected: Boolean, onToggle: () -> Unit) {
+private fun ConnectionCard(deviceStatus: DeviceStatus, onToggle: () -> Unit) {
+    val isConnected = deviceStatus.connectionState == DeviceConnectionState.CONNECTED
+    val isConnecting = deviceStatus.connectionState == DeviceConnectionState.CONNECTING
+
     NeckWellCard {
-        Row(
-            Modifier.fillMaxWidth().padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            IconTile(
-                icon = if (isConnected) Icons.Outlined.Link else Icons.Outlined.LinkOff,
-                tint = if (isConnected) AccentTealDark else TextGray,
-                size = 50
-            )
-            Column(Modifier.weight(1f)) {
-                Text("Connection Status", color = TextGray, style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(3.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(9.dp).background(if (isConnected) AccentTeal else TextGray, CircleShape))
-                    Spacer(Modifier.width(8.dp))
+        Column(Modifier.fillMaxWidth().padding(18.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                IconTile(
+                    icon = when {
+                        isConnected -> Icons.Outlined.Link
+                        isConnecting -> Icons.Outlined.Link
+                        else -> Icons.Outlined.LinkOff
+                    },
+                    tint = when {
+                        isConnected -> AccentTealDark
+                        isConnecting -> WarningAmberColor
+                        else -> TextGray
+                    },
+                    size = 48
+                )
+
+                Column(
+                    Modifier.weight(1f),
+                    verticalArrangement = Arrangement.Center
+                ) {
                     Text(
-                        if (isConnected) "Device Connected" else "Device Disconnected",
-                        color = if (isConnected) AccentTealDark else TextDark,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
+                        "Connection Status",
+                        color = TextGray,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            Modifier
+                                .size(10.dp)
+                                .background(
+                                    when {
+                                        isConnected -> AccentTeal
+                                        isConnecting -> WarningAmberColor
+                                        else -> TextGray
+                                    },
+                                    CircleShape
+                                )
+                        )
+                        Text(
+                            when {
+                                isConnected -> "Device Connected"
+                                isConnecting -> "Connecting to Device…"
+                                else -> "Device Disconnected"
+                            },
+                            color = when {
+                                isConnected -> AccentTealDark
+                                isConnecting -> WarningAmberColor
+                                else -> TextDark
+                            },
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                    }
+                }
+
+                val buttonColor = when {
+                    isConnected -> AlertCoral
+                    isConnecting -> AlertCoral
+                    else -> AccentTealDark
+                }
+
+                OutlinedButton(
+                    onClick = onToggle,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = buttonColor),
+                    border = BorderStroke(1.dp, buttonColor),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Icon(
+                        if (isConnected) Icons.Outlined.LinkOff else Icons.Outlined.Link,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        when {
+                            isConnected -> "Disconnect"
+                            isConnecting -> "Cancel"
+                            else -> "Connect"
+                        },
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp
                     )
                 }
             }
-            OutlinedButton(
-                onClick = onToggle,
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = if (isConnected) AlertCoral else AccentTealDark
-                ),
-                border = BorderStroke(1.dp, if (isConnected) AlertCoral else AccentTealDark),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 9.dp)
+
+            Spacer(Modifier.height(14.dp))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFEAEFF2)))
+            Spacer(Modifier.height(12.dp))
+
+            // Sub-status row: Live WiFi state and Device battery level
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Icon(
-                    if (isConnected) Icons.Outlined.LinkOff else Icons.Outlined.Link,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(if (isConnected) "Disconnect" else "Connect", fontWeight = FontWeight.SemiBold)
+                // WiFi Status
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val (wifiIcon, wifiTint, wifiLabel) = when (deviceStatus.wifiState) {
+                        WifiState.CONNECTED -> Triple(Icons.Outlined.Wifi, AccentTealDark, "WiFi Connected")
+                        WifiState.CONNECTING -> Triple(Icons.Outlined.Wifi, WarningAmberColor, "WiFi Connecting…")
+                        WifiState.FAILED -> Triple(Icons.Outlined.WifiOff, AlertCoral, "WiFi Failed")
+                        WifiState.DISCONNECTED -> Triple(Icons.Outlined.WifiOff, TextGray, "WiFi Offline")
+                    }
+                    Icon(wifiIcon, contentDescription = "WiFi status", tint = wifiTint, modifier = Modifier.size(16.dp))
+                    Text(wifiLabel, color = wifiTint, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+
+                // Battery Status
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val batteryColor = if (deviceStatus.isLowBattery) AlertCoral else AccentTealDark
+                    val batteryIcon = if (deviceStatus.isLowBattery) Icons.Outlined.BatteryAlert else Icons.Outlined.BatteryFull
+                    Icon(batteryIcon, contentDescription = "Battery status", tint = batteryColor, modifier = Modifier.size(16.dp))
+                    Text(
+                        "${deviceStatus.batteryLevel}%" + if (deviceStatus.isLowBattery) " (Low)" else "",
+                        color = batteryColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }
