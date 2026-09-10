@@ -78,6 +78,7 @@ import androidx.compose.material.icons.outlined.BatteryAlert
 import androidx.compose.material.icons.outlined.BatteryFull
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material.icons.outlined.WifiOff
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalContext
 
@@ -112,8 +113,17 @@ fun HomeScreen() {
         }
     }
 
-    LaunchedEffect(Unit) {
+    // Subscribe to live event listeners on mount, cleanly unsubscribe on unmount to prevent memory leaks
+    DisposableEffect(context) {
         DeviceStatusManager.startListening()
+        DeviceStatusManager.registerSystemListeners(context)
+        onDispose {
+            DeviceStatusManager.unregisterSystemListeners(context)
+            DeviceStatusManager.stopListening()
+        }
+    }
+
+    LaunchedEffect(Unit) {
         refreshData()
     }
 
@@ -122,8 +132,14 @@ fun HomeScreen() {
             title = "NeckWell",
             subtitle = "Posture Monitoring",
             action = {
-                IconButton(onClick = ::refreshData) {
-                    Icon(Icons.Outlined.Refresh, "Refresh posture data", tint = Color.White)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    DeviceConnectionBadge(connectionState = deviceStatus.connectionState)
+                    IconButton(onClick = ::refreshData) {
+                        Icon(Icons.Outlined.Refresh, "Refresh posture data", tint = Color.White)
+                    }
                 }
             }
         )
@@ -147,9 +163,43 @@ fun HomeScreen() {
 }
 
 @Composable
+private fun DeviceConnectionBadge(
+    connectionState: DeviceConnectionState,
+    modifier: Modifier = Modifier
+) {
+    val (dotColor, label) = when (connectionState) {
+        DeviceConnectionState.CONNECTED -> Color(0xFF4DD0E1) to "Connected"
+        DeviceConnectionState.CONNECTING -> Color(0xFFFFD54F) to "Connecting…"
+        DeviceConnectionState.RECONNECTING -> Color(0xFFFFB74D) to "Reconnecting…"
+        DeviceConnectionState.DISCONNECTED -> Color(0xFFFF8A80) to "Disconnected"
+    }
+
+    Row(
+        modifier = modifier
+            .background(Color.White.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .background(dotColor, CircleShape)
+        )
+        Text(
+            text = label,
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
 private fun ConnectionCard(deviceStatus: DeviceStatus, onToggle: () -> Unit) {
     val isConnected = deviceStatus.connectionState == DeviceConnectionState.CONNECTED
-    val isConnecting = deviceStatus.connectionState == DeviceConnectionState.CONNECTING
+    val isConnecting = deviceStatus.connectionState == DeviceConnectionState.CONNECTING ||
+            deviceStatus.connectionState == DeviceConnectionState.RECONNECTING
 
     NeckWellCard {
         Column(Modifier.fillMaxWidth().padding(18.dp)) {
@@ -190,19 +240,21 @@ private fun ConnectionCard(deviceStatus: DeviceStatus, onToggle: () -> Unit) {
                             Modifier
                                 .size(10.dp)
                                 .background(
-                                    when {
-                                        isConnected -> AccentTeal
-                                        isConnecting -> WarningAmberColor
-                                        else -> TextGray
+                                    when (deviceStatus.connectionState) {
+                                        DeviceConnectionState.CONNECTED -> AccentTeal
+                                        DeviceConnectionState.CONNECTING -> WarningAmberColor
+                                        DeviceConnectionState.RECONNECTING -> WarningAmberColor
+                                        DeviceConnectionState.DISCONNECTED -> TextGray
                                     },
                                     CircleShape
                                 )
                         )
                         Text(
-                            when {
-                                isConnected -> "Device Connected"
-                                isConnecting -> "Connecting to Device…"
-                                else -> "Device Disconnected"
+                            when (deviceStatus.connectionState) {
+                                DeviceConnectionState.CONNECTED -> "Device Connected"
+                                DeviceConnectionState.CONNECTING -> "Connecting to Device…"
+                                DeviceConnectionState.RECONNECTING -> "Reconnecting to Device…"
+                                DeviceConnectionState.DISCONNECTED -> "Device Disconnected"
                             },
                             color = when {
                                 isConnected -> AccentTealDark
@@ -250,12 +302,37 @@ private fun ConnectionCard(deviceStatus: DeviceStatus, onToggle: () -> Unit) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFEAEFF2)))
             Spacer(Modifier.height(12.dp))
 
-            // Sub-status row: Live WiFi state and Device battery level
+            // Sub-status row: Live Device connection, WiFi state, and Battery level aligned consistently
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                // Device Connection Status indicator - aligned with WiFi and Battery
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val connColor = when {
+                        isConnected -> AccentTealDark
+                        isConnecting -> WarningAmberColor
+                        else -> TextGray
+                    }
+                    val connIcon = if (isConnected) Icons.Outlined.Link else Icons.Outlined.LinkOff
+                    Icon(connIcon, contentDescription = "Connection state", tint = connColor, modifier = Modifier.size(16.dp))
+                    Text(
+                        when (deviceStatus.connectionState) {
+                            DeviceConnectionState.CONNECTED -> "Sensor Online"
+                            DeviceConnectionState.CONNECTING -> "Connecting…"
+                            DeviceConnectionState.RECONNECTING -> "Reconnecting…"
+                            DeviceConnectionState.DISCONNECTED -> "Sensor Offline"
+                        },
+                        color = connColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
                 // WiFi Status
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -263,7 +340,7 @@ private fun ConnectionCard(deviceStatus: DeviceStatus, onToggle: () -> Unit) {
                 ) {
                     val (wifiIcon, wifiTint, wifiLabel) = when (deviceStatus.wifiState) {
                         WifiState.CONNECTED -> Triple(Icons.Outlined.Wifi, AccentTealDark, "WiFi Connected")
-                        WifiState.CONNECTING -> Triple(Icons.Outlined.Wifi, WarningAmberColor, "WiFi Connecting…")
+                        WifiState.CONNECTING -> Triple(Icons.Outlined.Wifi, WarningAmberColor, "Connecting…")
                         WifiState.FAILED -> Triple(Icons.Outlined.WifiOff, AlertCoral, "WiFi Failed")
                         WifiState.DISCONNECTED -> Triple(Icons.Outlined.WifiOff, TextGray, "WiFi Offline")
                     }

@@ -17,6 +17,10 @@ class DeviceStatusManagerTest {
         assertEquals(DeviceConnectionState.CONNECTING, DeviceStatusManager.parseConnectionState("connecting"))
         assertEquals(DeviceConnectionState.CONNECTING, DeviceStatusManager.parseConnectionState("pairing"))
 
+        assertEquals(DeviceConnectionState.RECONNECTING, DeviceStatusManager.parseConnectionState("reconnecting"))
+        assertEquals(DeviceConnectionState.RECONNECTING, DeviceStatusManager.parseConnectionState("resuming"))
+        assertEquals(DeviceConnectionState.RECONNECTING, DeviceStatusManager.parseConnectionState("retrying"))
+
         assertEquals(DeviceConnectionState.DISCONNECTED, DeviceStatusManager.parseConnectionState("disconnected"))
         assertEquals(DeviceConnectionState.DISCONNECTED, DeviceStatusManager.parseConnectionState("offline"))
         assertEquals(DeviceConnectionState.DISCONNECTED, DeviceStatusManager.parseConnectionState("false"))
@@ -44,5 +48,42 @@ class DeviceStatusManagerTest {
 
         val lowStatus = DeviceStatus(batteryLevel = 15, isLowBattery = 15 < 20)
         assertTrue(lowStatus.isLowBattery)
+    }
+
+    @Test
+    fun testUpdateWifiStateLive() {
+        DeviceStatusManager.updateWifiState(WifiState.DISCONNECTED)
+        assertEquals(WifiState.DISCONNECTED, DeviceStatusManager.deviceStatus.value.wifiState)
+
+        DeviceStatusManager.updateWifiState(WifiState.CONNECTED)
+        assertEquals(WifiState.CONNECTED, DeviceStatusManager.deviceStatus.value.wifiState)
+
+        DeviceStatusManager.updateWifiState(WifiState.CONNECTING)
+        assertEquals(WifiState.CONNECTING, DeviceStatusManager.deviceStatus.value.wifiState)
+
+        DeviceStatusManager.updateWifiState(WifiState.FAILED)
+        assertEquals(WifiState.FAILED, DeviceStatusManager.deviceStatus.value.wifiState)
+    }
+
+    @Test
+    fun testUpdateBatteryLive() {
+        // Normal battery
+        DeviceStatusManager.updateBattery(75)
+        assertEquals(75, DeviceStatusManager.deviceStatus.value.batteryLevel)
+        assertFalse(DeviceStatusManager.deviceStatus.value.isLowBattery)
+
+        // Low battery (< 20%)
+        DeviceStatusManager.updateBattery(12)
+        assertEquals(12, DeviceStatusManager.deviceStatus.value.batteryLevel)
+        assertTrue(DeviceStatusManager.deviceStatus.value.isLowBattery)
+
+        // Clamping bounds
+        DeviceStatusManager.updateBattery(120)
+        assertEquals(100, DeviceStatusManager.deviceStatus.value.batteryLevel)
+        assertFalse(DeviceStatusManager.deviceStatus.value.isLowBattery)
+
+        DeviceStatusManager.updateBattery(-5)
+        assertEquals(0, DeviceStatusManager.deviceStatus.value.batteryLevel)
+        assertTrue(DeviceStatusManager.deviceStatus.value.isLowBattery)
     }
 }

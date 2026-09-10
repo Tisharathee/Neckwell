@@ -162,6 +162,14 @@ fun CalibrationScreen(navController: NavController) {
                         statusText = metrics.reason
                         cvaValue = metrics.cva
                         lateralTiltValue = metrics.lateralTilt
+
+                        if (PostureAnalyzer.DEV_MODE) {
+                            android.util.Log.d(
+                                "CalibrationScreen",
+                                "CVA=${"%.1f".format(metrics.cva)}°, Threshold=${PostureAnalyzer.CVA_MIN}°, Posture=${metrics.posture}, isCorrect=${metrics.isCorrect}, stableFrames=$stableFrames/$REQUIRED_STABLE_FRAMES"
+                            )
+                        }
+
                         // Only increment stable frames when posture quality passes ALL gates (CVA, lateral tilt, alignment)
                         stableFrames = if (metrics.isCorrect) stableFrames + 1 else 0
 

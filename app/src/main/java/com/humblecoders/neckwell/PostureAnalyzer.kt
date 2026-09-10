@@ -10,11 +10,13 @@ data class PostureMetrics(
     val lateralTilt: Float,      // Lateral neck/head tilt (Roll / side tilt) in degrees
     val shoulderAlignment: Float,// Shoulder-hip alignment
     val isCorrect: Boolean,      // True only if all posture axes are within acceptable thresholds
-    val reason: String
+    val reason: String,
+    val posture: String = if (isCorrect) "Good" else "Poor"
 )
 
 object PostureAnalyzer {
     private const val TAG = "PostureAnalyzer"
+    const val DEV_MODE = true
 
     private const val LEFT_EAR = 7
     private const val RIGHT_EAR = 8
@@ -27,6 +29,10 @@ object PostureAnalyzer {
     // Normal upright posture: CVA >= 48°
     // Forward head posture (FHP / poor posture): CVA < 48°
     const val CVA_MIN = 48f
+
+    fun isGoodPosture(cva: Float): Boolean = cva >= CVA_MIN
+    fun isPoorPosture(cva: Float): Boolean = cva < CVA_MIN
+    fun classifyPosture(cva: Float): String = if (isGoodPosture(cva)) "Good" else "Poor"
 
     // Maximum allowed forward horizontal distance between ear and shoulder in normalized coords
     const val MAX_EAR_SHOULDER_DX = 0.16f
@@ -137,11 +143,12 @@ object PostureAnalyzer {
         }
 
         // Gate Checks: ONLY accept if within verified good posture thresholds
-        val cvaOk = cva >= CVA_MIN
+        val cvaOk = isGoodPosture(cva)
         val dxOk = dx <= MAX_EAR_SHOULDER_DX
         val rollOk = abs(lateralTilt) <= MAX_LATERAL_TILT_DEG
         val alignmentOk = !hipVisible || shoulderAlignment <= SHOULDER_HIP_MAX
         val isCorrect = cvaOk && dxOk && rollOk && alignmentOk
+        val posture = if (isCorrect) "Good" else "Poor"
 
         val reason = when {
             isCorrect -> "Good posture — hold still"
@@ -151,11 +158,13 @@ object PostureAnalyzer {
             else -> "Adjust posture"
         }
 
-        Log.d(
-            TAG,
-            "[$sideLabel] Raw: ear=(${"%.3f".format(earX)}, ${"%.3f".format(earY)}), sh=(${"%.3f".format(shX)}, ${"%.3f".format(shY)}) | dx=${"%.3f".format(dx)}, dy=${"%.3f".format(dy)} -> CVA=${"%.1f".format(cva)}°, roll=${"%.1f".format(lateralTilt)}° | cvaOk=$cvaOk, dxOk=$dxOk -> isCorrect=$isCorrect, reason='$reason'"
-        )
+        if (DEV_MODE) {
+            Log.d(
+                TAG,
+                "[$sideLabel] Raw: ear=(${"%.3f".format(earX)}, ${"%.3f".format(earY)}), sh=(${"%.3f".format(shX)}, ${"%.3f".format(shY)}) | dx=${"%.3f".format(dx)}, dy=${"%.3f".format(dy)} -> Raw CVA=${"%.1f".format(cva)}°, Threshold=${CVA_MIN}° | Posture=$posture (cvaOk=$cvaOk, dxOk=$dxOk, isCorrect=$isCorrect, reason='$reason')"
+            )
+        }
 
-        return PostureMetrics(cva, lateralTilt, shoulderAlignment, isCorrect, reason)
+        return PostureMetrics(cva, lateralTilt, shoulderAlignment, isCorrect, reason, posture)
     }
 }

@@ -53,22 +53,37 @@ import com.humblecoders.neckwell.ui.theme.TextDark
 import com.humblecoders.neckwell.ui.theme.TextGray
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.ToneGenerator
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+
+private const val TAG = "NeckWell_Settings"
 
 @Composable
 fun SettingsScreen(navController: NavController) {
     val context = LocalContext.current
     NeckWellPreferences.init(context)
+
+    // Subscribe to live system listeners (e.g. Battery) on mount, cleanly unsubscribe on unmount
+    DisposableEffect(context) {
+        DeviceStatusManager.registerSystemListeners(context)
+        onDispose {
+            DeviceStatusManager.unregisterSystemListeners(context)
+        }
+    }
 
     val notificationsEnabled by NeckWellPreferences.notificationsEnabled.collectAsState()
     val hapticFeedback by NeckWellPreferences.hapticFeedbackEnabled.collectAsState()
@@ -79,7 +94,18 @@ fun SettingsScreen(navController: NavController) {
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         NeckWellPreferences.setNotificationsEnabled(context, isGranted)
-        if (!isGranted) {
+        if (isGranted) {
+            Log.i(TAG, "Notification permission granted by user. Triggering confirmation notification.")
+            println("[NeckWell] Notification permission granted - triggering confirmation alert")
+            AlertManager.triggerBadPostureNotification(
+                context,
+                title = "Notifications Active",
+                message = "NeckWell posture notifications are now enabled."
+            )
+            Toast.makeText(context, "Notifications enabled", Toast.LENGTH_SHORT).show()
+        } else {
+            Log.w(TAG, "Notification permission denied by user.")
+            println("[NeckWell] Notification permission denied")
             Toast.makeText(context, "Notification permission denied", Toast.LENGTH_SHORT).show()
         }
     }
@@ -97,17 +123,31 @@ fun SettingsScreen(navController: NavController) {
                     description = "Receive posture alerts and reminders",
                     checked = notificationsEnabled
                 ) { checked ->
-                    if (checked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        val hasPermission = ContextCompat.checkSelfPermission(
-                            context,
-                            Manifest.permission.POST_NOTIFICATIONS
-                        ) == PackageManager.PERMISSION_GRANTED
-                        if (!hasPermission) {
-                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            return@SettingsToggleItem
+                    if (checked) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            val hasPermission = ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.POST_NOTIFICATIONS
+                            ) == PackageManager.PERMISSION_GRANTED
+                            if (!hasPermission) {
+                                Log.i(TAG, "Requesting POST_NOTIFICATIONS permission from user")
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                return@SettingsToggleItem
+                            }
                         }
+                        NeckWellPreferences.setNotificationsEnabled(context, true)
+                        Log.i(TAG, "Push notifications enabled. Triggering confirmation notification.")
+                        println("[NeckWell] Push notifications enabled - triggering confirmation alert")
+                        AlertManager.triggerBadPostureNotification(
+                            context,
+                            title = "Notifications Active",
+                            message = "NeckWell posture notifications are now enabled."
+                        )
+                    } else {
+                        NeckWellPreferences.setNotificationsEnabled(context, false)
+                        Log.i(TAG, "Push notifications disabled by user.")
+                        println("[NeckWell] Push notifications disabled")
                     }
-                    NeckWellPreferences.setNotificationsEnabled(context, checked)
                 }
 
                 SettingsToggleItem(
@@ -118,7 +158,12 @@ fun SettingsScreen(navController: NavController) {
                 ) { checked ->
                     NeckWellPreferences.setHapticFeedbackEnabled(context, checked)
                     if (checked) {
-                        AlertManager.triggerHapticFeedback(context, 100L)
+                        Log.i(TAG, "Haptic feedback enabled: triggering verification pulse")
+                        println("[NeckWell] Haptic feedback enabled - triggering test vibration")
+                        AlertManager.triggerHapticFeedback(context, 150L)
+                    } else {
+                        Log.i(TAG, "Haptic feedback disabled by user")
+                        println("[NeckWell] Haptic feedback disabled")
                     }
                 }
 
@@ -130,7 +175,10 @@ fun SettingsScreen(navController: NavController) {
                 ) { checked ->
                     NeckWellPreferences.setSoundAlertsEnabled(context, checked)
                     if (checked) {
+                        Log.i(TAG, "Sound alerts enabled: playing verification beep")
                         AlertManager.playToneAlert(context, ToneGenerator.TONE_PROP_BEEP, 150)
+                    } else {
+                        Log.i(TAG, "Sound alerts disabled by user")
                     }
                 }
             }
@@ -139,6 +187,7 @@ fun SettingsScreen(navController: NavController) {
                 val connectionLabel = when (deviceStatus.connectionState) {
                     DeviceConnectionState.CONNECTED -> "Connected"
                     DeviceConnectionState.CONNECTING -> "Connecting…"
+                    DeviceConnectionState.RECONNECTING -> "Reconnecting…"
                     DeviceConnectionState.DISCONNECTED -> "Disconnected"
                 }
                 SettingsClickableItem(
@@ -187,9 +236,12 @@ fun SettingsScreen(navController: NavController) {
                     description = "View our privacy policy"
                 ) {
                     try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://neckwell.com/privacy"))
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://neckwell.com/privacy")).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
                         context.startActivity(intent)
                     } catch (e: Exception) {
+                        Log.w(TAG, "Could not open privacy policy link: ${e.message}")
                         Toast.makeText(context, "Privacy Policy: All sensor data is processed locally on your device.", Toast.LENGTH_LONG).show()
                     }
                 }
@@ -199,15 +251,47 @@ fun SettingsScreen(navController: NavController) {
                     title = "Contact support",
                     description = "Get help with NeckWell"
                 ) {
+                    val supportEmail = "support@neckwell.com"
+                    val subject = "NeckWell Support Request"
+                    val body = "Device: ${deviceStatus.deviceName}\nApp Version: 1.0.0\n\nPlease describe your issue:\n"
+
                     try {
-                        val intent = Intent(Intent.ACTION_SENDTO).apply {
-                            data = Uri.parse("mailto:support@neckwell.com")
-                            putExtra(Intent.EXTRA_SUBJECT, "NeckWell Support Request")
-                            putExtra(Intent.EXTRA_TEXT, "Device: ${deviceStatus.deviceName}\nApp Version: 1.0.0\n\nPlease describe your issue:\n")
+                        val mailtoIntent = Intent(Intent.ACTION_SENDTO).apply {
+                            data = Uri.parse("mailto:$supportEmail")
+                            putExtra(Intent.EXTRA_SUBJECT, subject)
+                            putExtra(Intent.EXTRA_TEXT, body)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
-                        context.startActivity(intent)
+                        context.startActivity(mailtoIntent)
+                        Log.i(TAG, "Contact Support action fired: opened mail client for $supportEmail")
+                        println("[NeckWell] Contact Support action fired: opened mail client")
                     } catch (e: Exception) {
-                        Toast.makeText(context, "Please email us at support@neckwell.com", Toast.LENGTH_LONG).show()
+                        Log.w(TAG, "Primary mailto intent failed (${e.message}), attempting fallback chooser", e)
+                        try {
+                            val fallbackIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "message/rfc822"
+                                putExtra(Intent.EXTRA_EMAIL, arrayOf(supportEmail))
+                                putExtra(Intent.EXTRA_SUBJECT, subject)
+                                putExtra(Intent.EXTRA_TEXT, body)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(Intent.createChooser(fallbackIntent, "Send Support Email").apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            })
+                            Log.i(TAG, "Contact Support action fired via fallback chooser for $supportEmail")
+                            println("[NeckWell] Contact Support fallback chooser fired")
+                        } catch (fallbackEx: Exception) {
+                            Log.e(TAG, "Contact Support failed: unable to open email client on device", fallbackEx)
+                            println("[NeckWell] Contact Support failed: ${fallbackEx.message}")
+                            try {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                val clip = ClipData.newPlainText("Support Email", supportEmail)
+                                clipboard?.setPrimaryClip(clip)
+                                Toast.makeText(context, "No email app found. Copied $supportEmail to clipboard.", Toast.LENGTH_LONG).show()
+                            } catch (clipEx: Exception) {
+                                Toast.makeText(context, "Please email us at $supportEmail", Toast.LENGTH_LONG).show()
+                            }
+                        }
                     }
                 }
             }
@@ -233,7 +317,13 @@ private fun SettingsToggleItem(
     onCheckedChange: (Boolean) -> Unit
 ) {
     NeckWellCard {
-        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { onCheckedChange(!checked) }
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             IconTile(icon, InfoBlue, size = 44)
             Spacer(Modifier.width(13.dp))
             Column(Modifier.weight(1f)) {

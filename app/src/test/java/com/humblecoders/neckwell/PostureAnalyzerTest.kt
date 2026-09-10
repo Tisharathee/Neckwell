@@ -95,4 +95,38 @@ class PostureAnalyzerTest {
         assertFalse("Expected excessive lateral tilt to be rejected", metrics.isCorrect)
         assertTrue("Reason should flag head tilt", metrics.reason.startsWith("Level your head"))
     }
+
+    @Test
+    fun testPostureClassificationAndHelpers() {
+        assertEquals("Good", PostureAnalyzer.classifyPosture(48f))
+        assertEquals("Good", PostureAnalyzer.classifyPosture(65f))
+        assertEquals("Poor", PostureAnalyzer.classifyPosture(47.9f))
+        assertEquals("Poor", PostureAnalyzer.classifyPosture(25f))
+
+        assertTrue(PostureAnalyzer.isGoodPosture(48f))
+        assertFalse(PostureAnalyzer.isGoodPosture(47.9f))
+
+        assertTrue(PostureAnalyzer.isPoorPosture(47.9f))
+        assertFalse(PostureAnalyzer.isPoorPosture(48f))
+
+        val goodMetrics = PostureAnalyzer.computeMetrics(
+            earX = 0.50f,
+            earY = 0.25f,
+            earVis = 0.95f,
+            shX = 0.53f,
+            shY = 0.45f,
+            shVis = 0.95f
+        )
+        assertEquals("Good", goodMetrics.posture)
+
+        val badMetrics = PostureAnalyzer.computeMetrics(
+            earX = 0.25f,
+            earY = 0.35f,
+            earVis = 0.95f,
+            shX = 0.50f,
+            shY = 0.45f,
+            shVis = 0.95f
+        )
+        assertEquals("Poor", badMetrics.posture)
+    }
 }
