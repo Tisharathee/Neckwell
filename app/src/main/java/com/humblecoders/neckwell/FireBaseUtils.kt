@@ -3,6 +3,7 @@ import com.google.firebase.auth.FirebaseAuth
 import android.annotation.SuppressLint
 import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.tasks.await
 import java.util.*
 
@@ -11,66 +12,103 @@ data class PostureData(
     val posture: String = ""
 )
 
-suspend fun fetchTodayPostureData(): List<PostureData> {
-    val db = FirebaseFirestore.getInstance()
-    Log.d("NeckWell", "Starting fetchTodayPostureData()")
-
-    // Get start and end of today as Unix timestamps in seconds
-    val calendar = Calendar.getInstance()
-    calendar.set(Calendar.HOUR_OF_DAY, 0)
-    calendar.set(Calendar.MINUTE, 0)
-    calendar.set(Calendar.SECOND, 0)
-    calendar.set(Calendar.MILLISECOND, 0)
-    val startOfDay = calendar.timeInMillis / 1000 // Convert to Unix timestamp in seconds
+/**
+ * Pure function to filter posture data for a specific calendar day.
+ * Extracted for deterministic testing and reuse across one-time queries and real-time listeners.
+ */
+fun filterTodayPostureData(allData: List<PostureData>, nowMillis: Long = System.currentTimeMillis()): List<PostureData> {
+    val calendar = Calendar.getInstance().apply {
+        timeInMillis = nowMillis
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    val startOfDay = calendar.timeInMillis / 1000
 
     calendar.set(Calendar.HOUR_OF_DAY, 23)
     calendar.set(Calendar.MINUTE, 59)
     calendar.set(Calendar.SECOND, 59)
-    val endOfDay = calendar.timeInMillis / 1000 // Convert to Unix timestamp in seconds
+    calendar.set(Calendar.MILLISECOND, 999)
+    val endOfDay = calendar.timeInMillis / 1000
 
-    Log.d("NeckWell", "Looking for data between $startOfDay and $endOfDay")
+    return allData.filter { data ->
+        data.timestamp != null && data.timestamp in startOfDay..endOfDay
+    }.sortedBy { it.timestamp }
+}
+
+/**
+ * Calculates active tracking time in minutes from a collection of posture readings.
+ * - 0 readings -> 0 minutes
+ * - 1 reading -> 1 minute
+ * - >= 2 readings -> difference between latest and earliest timestamp in minutes (min 1 min)
+ */
+fun calculateActiveMinutes(data: List<PostureData>): Int {
+    val timestamps = data.mapNotNull { it.timestamp }
+    if (timestamps.isEmpty()) return 0
+    if (timestamps.size == 1) return 1
+    return maxOf(1, ((timestamps.maxOrNull()!! - timestamps.minOrNull()!!) / 60L).toInt())
+}
+
+/**
+ * Real-time Firestore snapshot listener on the 'posture_data' collection.
+ * Invokes [onDataUpdated] immediately upon subscription and every time new data is added or modified.
+ * Returns a [ListenerRegistration] so the caller can detach on unmount/dispose.
+ */
+fun listenToPostureData(
+    onDataUpdated: (todayData: List<PostureData>, latest: PostureData?) -> Unit,
+    onError: (Exception) -> Unit = {}
+): ListenerRegistration {
+    val db = FirebaseFirestore.getInstance()
+    Log.d("NeckWell", "Registering real-time listener on 'posture_data' collection...")
+
+    return db.collection("posture_data")
+        .addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                Log.e("NeckWell", "Error in posture_data snapshot listener", error)
+                onError(error)
+                return@addSnapshotListener
+            }
+            if (snapshot == null) return@addSnapshotListener
+
+            val allData = snapshot.documents.mapNotNull { doc ->
+                val timestamp = doc.getLong("timestamp")
+                val posture = doc.getString("posture") ?: ""
+                PostureData(
+                    timestamp = timestamp,
+                    posture = posture
+                )
+            }
+
+            val todayData = filterTodayPostureData(allData)
+            val latest = allData.maxByOrNull { it.timestamp ?: 0L }
+
+            Log.d("NeckWell", "Live posture_data updated: ${todayData.size} readings today, latest=${latest?.posture}")
+            onDataUpdated(todayData, latest)
+        }
+}
+
+suspend fun fetchTodayPostureData(): List<PostureData> {
+    val db = FirebaseFirestore.getInstance()
+    Log.d("NeckWell", "Starting fetchTodayPostureData()")
 
     return try {
-        // Fetch all data from Firebase (simple approach, no index needed)
-        Log.d("NeckWell", "Fetching all documents from posture_data collection...")
         val snapshot = db.collection("posture_data")
             .get()
             .await()
 
-        Log.d("NeckWell", "Fetched ${snapshot.documents.size} total documents from Firebase")
-        
-        // Log each document's data
-        snapshot.documents.forEach { doc ->
-            Log.d("NeckWell", "Document ID: ${doc.id}, Data: ${doc.data}")
-        }
-
-        // Filter on client side to get today's data
         val allData = snapshot.documents.mapNotNull { doc ->
             val timestamp = doc.getLong("timestamp")
             val posture = doc.getString("posture") ?: ""
-            
-            Log.d("NeckWell", "Mapped doc: timestamp=$timestamp, posture=$posture")
-            
             PostureData(
                 timestamp = timestamp,
                 posture = posture
             )
         }
-        
-        Log.d("NeckWell", "Total mapped data: ${allData.size} items")
-        
-        val todayData = allData.filter { data ->
-            val isInRange = data.timestamp != null && data.timestamp >= startOfDay && data.timestamp <= endOfDay
-            if (isInRange) {
-                Log.d("NeckWell", "Included: timestamp=${data.timestamp}, posture=${data.posture}")
-            } else {
-                Log.d("NeckWell", "Excluded: timestamp=${data.timestamp} (not in range)")
-            }
-            isInRange
-        }.sortedBy { it.timestamp }
-        
+
+        val todayData = filterTodayPostureData(allData)
         Log.d("NeckWell", "Today's data count: ${todayData.size}")
-        return todayData
+        todayData
     } catch (e: Exception) {
         Log.e("NeckWell", "Error fetching today's posture data", e)
         emptyList()

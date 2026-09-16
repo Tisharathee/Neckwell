@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NeckWell — Mathematical, Biomechanical & Sensor Formulations</title>
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']],
+        processEscapes: true
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre']
+      }
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <style>
+    @page {
+      size: A4;
+      margin: 12mm 14mm 12mm 14mm;
+      @bottom-right {
+        content: "Page " counter(page);
+        font-size: 8pt;
+        color: #64748B;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #0F172A;
+      background-color: #FFFFFF;
+      font-size: 8.8pt;
+      line-height: 1.4;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Header Banner */
+    .header-banner {
+      background: linear-gradient(135deg, #1A365D 0%, #0F172A 60%, #0D9488 100%);
+      color: #FFFFFF;
+      padding: 16px 20px;
+      border-radius: 9px;
+      margin-bottom: 12px;
+    }
+
+    .header-tagline {
+      display: inline-block;
+      font-size: 7.2pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      background: rgba(255, 255, 255, 0.15);
+      padding: 2px 7px;
+      border-radius: 10px;
+      margin-bottom: 5px;
+      color: #5EEAD4;
+    }
+
+    .header-banner h1 {
+      font-size: 18pt;
+      font-weight: 800;
+      letter-spacing: -0.4px;
+      line-height: 1.2;
+      margin-bottom: 3px;
+    }
+
+    .header-banner p {
+      font-size: 9pt;
+      color: rgba(255, 255, 255, 0.88);
+    }
+
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-top: 8px;
+      padding-top: 7px;
+      border-top: 1px solid rgba(255, 255, 255, 0.18);
+      font-size: 7.8pt;
+      color: rgba(255, 255, 255, 0.92);
+    }
+
+    .meta-item strong {
+      color: #5EEAD4;
+    }
+
+    /* Section Headings */
+    h2 {
+      font-size: 11pt;
+      font-weight: 700;
+      color: #1E293B;
+      border-bottom: 1.5px solid #CBD5E1;
+      padding-bottom: 3px;
+      margin-top: 12px;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+
+    .section-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 19px;
+      height: 19px;
+      background: #E0F2FE;
+      color: #0284C7;
+      border-radius: 4px;
+      font-size: 7.5pt;
+      font-weight: bold;
+    }
+
+    p {
+      color: #334155;
+      font-size: 8.4pt;
+      margin-bottom: 5px;
+    }
+
+    /* Equation Boxes */
+    .eq-box {
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-left: 3.5px solid #0D9488;
+      border-radius: 5px;
+      padding: 6px 12px;
+      margin-top: 4px;
+      margin-bottom: 6px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    .eq-title {
+      font-size: 7.8pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: #0F766E;
+      margin-bottom: 2px;
+    }
+
+    .eq-math {
+      text-align: center;
+      margin: 3px 0;
+    }
+
+    .eq-desc {
+      font-size: 7.8pt;
+      color: #64748B;
+      margin-top: 2px;
+      line-height: 1.3;
+    }
+
+    /* Variable Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 4px;
+      margin-bottom: 6px;
+      font-size: 7.8pt;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    th, td {
+      border: 1px solid #CBD5E1;
+      padding: 4px 7px;
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    th {
+      background: #F1F5F9;
+      color: #1E293B;
+      font-weight: 700;
+    }
+
+    tr:nth-child(even) td {
+      background: #F8FAFC;
+    }
+
+    code {
+      font-family: "SF Mono", Monaco, Menlo, Consolas, monospace;
+      background: #F1F5F9;
+      color: #0F172A;
+      font-size: 7.2pt;
+      padding: 1px 3px;
+      border-radius: 3px;
+      border: 1px solid #E2E8F0;
+    }
+
+    .page-break {
+      page-break-before: always;
+      break-before: page;
+    }
+
+    .footer-note {
+      text-align: center;
+      font-size: 7.3pt;
+      color: #94A3B8;
+      margin-top: 10px;
+      padding-top: 6px;
+      border-top: 1px solid #E2E8F0;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ==================== PAGE 1: VISION KINEMATICS ==================== -->
+  <div class="header-banner">
+    <div class="header-tagline">Formal Mathematical Specification</div>
+    <h1>NeckWell Algorithm & Formula Manual</h1>
+    <p>Comprehensive Mathematical Formulations Across Vision, IMU Kinematics, Scoring & UI</p>
+    <div class="meta-row">
+      <div class="meta-item"><strong>Platform:</strong> Android / Jetpack Compose</div>
+      <div class="meta-item"><strong>Sensor Specs:</strong> ESP32 6-DoF Accelerometer (50 Hz)</div>
+      <div class="meta-item"><strong>Vision Landmark Model:</strong> MediaPipe Pose Landmarker</div>
+      <div class="meta-item"><strong>Reference Standard:</strong> Clinical CVA Standards</div>
+    </div>
+  </div>
+
+  <h2><span class="section-icon">1</span> Computer Vision & Biomechanical Posture Kinematics</h2>
+  <p>Coordinates $(x, y) \in [0.0, 1.0]$ are normalized to the CameraX preview frame. In MediaPipe, $y=0$ is the image top and $y=1$ is the bottom. In an upright posture, the ear is higher than the shoulder ($y_{\text{ear}} < y_{\text{sh}}$).</p>
+
+  <div class="eq-box">
+    <div class="eq-title">1.1 Profile Coordinate Displacement</div>
+    <div class="eq-math">
+      $$\Delta y = y_{\text{shoulder}} - y_{\text{ear}}, \qquad \Delta x = |x_{\text{ear}} - x_{\text{shoulder}}|$$
+    </div>
+    <div class="eq-desc">
+      $\Delta y$ represents vertical elevation; $\Delta x$ represents forward horizontal translation. In upright posture, $\Delta y > 0$ strictly.
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">1.2 Head Droop / Severe Slouch Rejection Gate</div>
+    <div class="eq-math">
+      $$\text{Slouch Condition} \iff \Delta y \le 0.01$$
+    </div>
+    <div class="eq-desc">
+      If the ear drops level with or beneath the shoulder ($y_{\text{ear}} \ge y_{\text{sh}} - 0.01$), the posture is immediately gated as bad ($\theta_{\text{CVA}} = 0^\circ$).
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">1.3 Craniovertebral Angle (CVA / Pitch)</div>
+    <div class="eq-math">
+      $$\theta_{\text{CVA}} = \operatorname{atan2}(\Delta y, \Delta x) \times \frac{180^\circ}{\pi}$$
+    </div>
+    <div class="eq-desc">
+      Calculates the angle formed between the ear-to-shoulder vector and the horizontal reference plane.
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">1.4 Clinical Classification Rule</div>
+    <div class="eq-math">
+      $$\text{Posture}(\theta_{\text{CVA}}, \Delta x) = 
+      \begin{cases} 
+        \text{"Good"} & \text{if } \theta_{\text{CVA}} \ge 48.0^\circ \;\land\; \Delta x \le 0.16 \\ 
+        \text{"Poor"} & \text{if } \theta_{\text{CVA}} < 48.0^\circ \;\lor\; \Delta x > 0.16 
+      \end{cases}$$
+    </div>
+    <div class="eq-desc">
+      $\theta_{\text{CVA}} = 48.0^\circ$ is the standard clinical cutoff separating neutral cervical alignment from Forward Head Posture (FHP). $\Delta x \le 0.16$ prevents excessive anterior translation.
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">1.5 Lateral Head Roll (Coronal Plane Tilt)</div>
+    <div class="eq-math">
+      $$\Delta x_{\text{ears}} = |x_{\text{ear}, 2} - x_{\text{ear}, 1}|, \qquad \Delta y_{\text{ears}} = y_{\text{ear}, 2} - y_{\text{ear}, 1}$$
+      $$\theta_{\text{roll}} = \operatorname{atan2}(\Delta y_{\text{ears}}, \Delta x_{\text{ears}}) \times \frac{180^\circ}{\pi} \quad \Big(|\theta_{\text{roll}}| \le 15.0^\circ\Big)$$
+    </div>
+    <div class="eq-desc">
+      Evaluated when both ears are visible ($V_{\text{otherEar}} \ge 0.35$ and $\Delta x_{\text{ears}} > 0.01$). Flags lateral sideways head tilt.
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">1.6 Profile Side Selection & Landmark Quality Cutoff</div>
+    <div class="eq-math">
+      $$V_{\text{left}} = \frac{V_{\text{ear}, L} + V_{\text{sh}, L}}{2}, \qquad V_{\text{right}} = \frac{V_{\text{ear}, R} + V_{\text{sh}, R}}{2}$$
+      $$\text{Selected Side} = \begin{cases} \text{Left Side} & \text{if } V_{\text{left}} \ge V_{\text{right}} \\ \text{Right Side} & \text{if } V_{\text{right}} > V_{\text{left}} \end{cases} \quad \Big(V_{\text{ear}} \ge 0.30 \;\land\; V_{\text{sh}} \ge 0.30\Big)$$
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">1.7 Composite Posture Verification Function</div>
+    <div class="eq-math">
+      $$\text{isCorrect} = \mathbb{I}\Big( (\theta_{\text{CVA}} \ge 48^\circ) \;\land\; (\Delta x \le 0.16) \;\land\; (|\theta_{\text{roll}}| \le 15^\circ) \;\land\; (|x_{\text{midShoulder}} - x_{\text{midHip}}| \le 0.08) \Big)$$
+    </div>
+  </div>
+
+  <!-- ==================== PAGE 2: HARDWARE & ANALYTICS ==================== -->
+  <div class="page-break"></div>
+
+  <h2><span class="section-icon">2</span> Wearable Hardware (ESP32) & IMU Sensor Calibration</h2>
+  <p>Formulas for 3-axis accelerometer gravity decomposition and baseline neutral tilt calibration at 50 Hz.</p>
+
+  <div class="eq-box">
+    <div class="eq-title">2.1 Accelerometer Gravity Vector Decomposition</div>
+    <div class="eq-math">
+      $$a_x = -\sin(\theta_{\text{pitch}}), \quad a_y = \cos(\theta_{\text{pitch}}) \cdot \sin(\theta_{\text{roll}}), \quad a_z = \cos(\theta_{\text{pitch}}) \cdot \cos(\theta_{\text{roll}})$$
+    </div>
+    <div class="eq-desc">
+      Aerospace standard gravity decomposition representing body orientation with normalized gravity magnitude $\|\vec{g}\| = 1.0$.
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">2.2 Low-Pass Filtered Gravity Mean ($N = 250$ Samples)</div>
+    <div class="eq-math">
+      $$N = \left\lfloor \frac{T}{1000 / f_s} \right\rfloor = \frac{5000\text{ ms}}{20\text{ ms}} = 250\text{ samples}$$
+      $$\bar{a}_x = \frac{1}{N} \sum_{i=1}^N a_{x, i}, \qquad \bar{a}_y = \frac{1}{N} \sum_{i=1}^N a_{y, i}, \qquad \bar{a}_z = \frac{1}{N} \sum_{i=1}^N a_{z, i}$$
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">2.3 Pitch and Roll Angle Extraction from Accelerometer</div>
+    <div class="eq-math">
+      $$\theta_{\text{pitch}} = \operatorname{atan2}\left(-\bar{a}_x, \sqrt{\bar{a}_y^2 + \bar{a}_z^2}\right) \times \frac{180^\circ}{\pi}, \qquad \theta_{\text{roll}} = \operatorname{atan2}\left(\bar{a}_y, \bar{a}_z\right) \times \frac{180^\circ}{\pi}$$
+    </div>
+    <div class="eq-desc">
+      Derives neutral physical pitch and roll angles from the averaged static gravity vector.
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">2.4 Hardware Baseline Sensor Acceptance Boundaries</div>
+    <div class="eq-math">
+      $$\text{Valid Sensor Calibration} \iff \Big( -25.0^\circ \le \theta_{\text{sensorPitch}} \le 25.0^\circ \Big) \;\land\; \Big( |\theta_{\text{sensorRoll}}| \le 15.0^\circ \Big)$$
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">2.5 Temporal Stability Hold Window</div>
+    <div class="eq-math">
+      $$t_{\text{stable}} = \frac{N_{\text{stable\_frames}}}{\text{FPS}} = \frac{30\text{ frames}}{30\text{ fps}} = 1.0\text{ second}$$
+    </div>
+  </div>
+
+  <h2><span class="section-icon">3</span> Analytics, Posture Scoring & Tracking Models</h2>
+
+  <div class="eq-box">
+    <div class="eq-title">3.1 Discrete Posture Score Mapping</div>
+    <div class="eq-math">
+      $$\mathcal{S}(p) = 
+      \begin{cases} 
+        95 & \text{if } p = \text{"Excellent"} \\ 
+        85 & \text{if } p = \text{"Good"} \\ 
+        70 & \text{if } p = \text{"Okay"} \\ 
+        50 & \text{if } p = \text{"Poor"} \\ 
+        30 & \text{if } p = \text{"Very poor"} \\ 
+        0  & \text{otherwise} 
+      \end{cases}$$
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">3.2 Good Posture Compliance Percentage</div>
+    <div class="eq-math">
+      $$\%_{\text{Good}} = \left( \frac{\sum_{i=1}^N \mathbb{I}\big(p_i \in \{\text{"Excellent"}, \text{"Good"}\}\big)}{N} \right) \times 100$$
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">3.3 Categorical Frequency Distribution Percentage</div>
+    <div class="eq-math">
+      $$\%_{c} = \left( \frac{1}{N} \sum_{i=1}^N \mathbb{I}(p_i = c) \right) \times 100, \quad c \in \{\text{"Excellent"}, \text{"Good"}, \text{"Okay"}, \text{"Poor"}\}$$
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">3.4 Daily Average & Hourly Posture Quality Scores</div>
+    <div class="eq-math">
+      $$\bar{S}_{\text{day}} = \frac{1}{N} \sum_{i=1}^N \mathcal{S}(p_i), \qquad \bar{S}_h = \frac{1}{|K_h|} \sum_{i \in K_h} \mathcal{S}(p_i) \quad (K_h = \{i \mid \operatorname{hour}(t_i) = h\})$$
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">3.5 Active Time Tracked (Minutes)</div>
+    <div class="eq-math">
+      $$T_{\text{active}} = \max\left(1, \; \left\lfloor \frac{\max(t) - \min(t)}{60} \right\rfloor\right) \quad (\text{timestamps } t \text{ in Unix seconds})$$
+    </div>
+  </div>
+
+  <h2><span class="section-icon">4</span> UI Canvas Geometry & Gauge Trigonometry</h2>
+
+  <div class="eq-box">
+    <div class="eq-title">4.1 Radial Posture Gauge Sweep Arc</div>
+    <div class="eq-math">
+      $$\theta_{\text{start}} = 135.0^\circ, \qquad \theta_{\text{sweep}} = 270.0^\circ \times \left( \frac{\mathcal{S}}{100} \right)$$
+    </div>
+    <div class="eq-desc">
+      A $270^\circ$ circular arc drawn with rounded stroke caps. Starts at bottom-left ($135^\circ$) and sweeps clockwise toward bottom-right.
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">4.2 Gauge Indicator Needle Knob Coordinates</div>
+    <div class="eq-math">
+      $$\theta_{\text{rad}} = \left(135^\circ + 270^\circ \times \frac{\mathcal{S}}{100}\right) \times \frac{\pi}{180^\circ}$$
+      $$X_{\text{knob}} = X_{\text{center}} + R \cdot \cos(\theta_{\text{rad}}), \qquad Y_{\text{knob}} = Y_{\text{center}} + R \cdot \sin(\theta_{\text{rad}})$$
+    </div>
+    <div class="eq-desc">
+      Computes the precise $(X, Y)$ Canvas position of the glowing indicator knob along perimeter radius $R = \frac{\min(W, H)}{2}$.
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">4.3 Dynamic Canvas Bar Chart Geometry</div>
+    <div class="eq-math">
+      $$W_{\text{slot}} = \frac{W_{\text{chart}}}{M}, \qquad W_{\text{bar}} = \min\big(0.48 \cdot W_{\text{slot}}, \; 34\text{ dp}\big)$$
+      $$H_{\text{bar}} = \left(\frac{\bar{S}_h}{100}\right) \times (H_{\text{chart}} - 28\text{ dp}) \times p_{\text{anim}}$$
+      $$X_{\text{bar}, i} = i \cdot W_{\text{slot}} + \frac{W_{\text{slot}} - W_{\text{bar}}}{2}, \qquad Y_{\text{bar}, i} = H_{\text{chart}} - H_{\text{bar}}$$
+    </div>
+    <div class="eq-desc">
+      Positions and sizes rounded-corner score bars along the timeline axis with dynamic interpolation factor $p_{\text{anim}} \in [0.0, 1.0]$.
+    </div>
+  </div>
+
+  <h2><span class="section-icon">5</span> System & Battery Telemetry</h2>
+
+  <div class="eq-box">
+    <div class="eq-title">5.1 Battery Percentage Clamping</div>
+    <div class="eq-math">
+      $$\text{Raw Pct} = \left\lfloor \frac{\text{EXTRA\_LEVEL} \times 100}{\text{EXTRA\_SCALE}} \right\rfloor, \qquad \text{Battery Pct} = \min\Big(100, \; \max(0, \; \text{Raw Pct})\Big)$$
+    </div>
+    <div class="eq-desc">
+      Extracts raw sticky broadcast levels and clamps to the valid integer range $[0, 100]\%$.
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">5.2 Low Battery Boolean Trigger</div>
+    <div class="eq-math">
+      $$\text{isLowBattery} = \mathbb{I}(\text{Battery Pct} < 20)$$
+    </div>
+    <div class="eq-desc">
+      Triggers warning amber/coral alerts when device battery falls below $20\%$.
+    </div>
+  </div>
+
+  <h2><span class="section-icon">6</span> Parameter & Constant Reference Table</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25%;">Symbol / Constant</th>
+        <th style="width: 25%;">Value / Range</th>
+        <th style="width: 50%;">Biomechanical & Engineering Meaning</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>CVA_MIN</code> ($\theta_{\text{CVA}}$)</td>
+        <td>$\ge 48.0^\circ$</td>
+        <td>Clinical Craniovertebral Angle cutoff for upright vs Forward Head Posture.</td>
+      </tr>
+      <tr>
+        <td><code>MAX_EAR_SHOULDER_DX</code> ($\Delta x$)</td>
+        <td>$\le 0.16$</td>
+        <td>Maximum allowable forward ear translation normalized to frame width.</td>
+      </tr>
+      <tr>
+        <td><code>MAX_LATERAL_TILT_DEG</code> ($\theta_{\text{roll}}$)</td>
+        <td>$\le 15.0^\circ$</td>
+        <td>Maximum allowable coronal roll angle before flagging head tilt.</td>
+      </tr>
+      <tr>
+        <td><code>SHOULDER_HIP_MAX</code> ($\delta_{\text{torso}}$)</td>
+        <td>$\le 0.08$</td>
+        <td>Maximum allowable lateral horizontal displacement between shoulder and hip midpoints.</td>
+      </tr>
+      <tr>
+        <td><code>REQUIRED_STABLE_FRAMES</code></td>
+        <td>$30\text{ frames}$ ($1.0\text{ s}$)</td>
+        <td>Consecutive valid upright frames required to confirm neutral baseline hold.</td>
+      </tr>
+      <tr>
+        <td>$\theta_{\text{sensorPitch}}$ baseline gate</td>
+        <td>$[-25.0^\circ, +25.0^\circ]$</td>
+        <td>Accelerometer pitch range for valid neutral wearable mounting.</td>
+      </tr>
+      <tr>
+        <td>$\theta_{\text{sensorRoll}}$ baseline gate</td>
+        <td>$[-15.0^\circ, +15.0^\circ]$</td>
+        <td>Accelerometer roll range for valid neutral wearable mounting.</td>
+      </tr>
+      <tr>
+        <td>Low Battery Threshold</td>
+        <td>$< 20\%$</td>
+        <td>Threshold under which visual alert icons and warning badges fire.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="footer-note">
+    NeckWell Mathematical Specification Document &bull; Generated &amp; Formatted September 2026
+  </div>
+
+</body>
+</html>

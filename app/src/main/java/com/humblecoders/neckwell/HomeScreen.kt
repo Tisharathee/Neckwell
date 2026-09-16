@@ -80,6 +80,7 @@ import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.ui.platform.LocalContext
 
 @Composable
@@ -91,6 +92,7 @@ fun HomeScreen() {
     var currentPosture by remember { mutableStateOf<PostureData?>(null) }
     var todayData by remember { mutableStateOf<List<PostureData>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var lastAlertedTimestamp by remember { mutableLongStateOf(0L) }
     val scope = rememberCoroutineScope()
 
     fun refreshData() {
@@ -103,12 +105,16 @@ fun HomeScreen() {
 
             // Trigger alert if latest posture is poor
             if (latest?.posture == "Poor" || latest?.posture == "Very poor") {
-                AlertManager.triggerBadPostureNotification(
-                    context,
-                    title = "Poor Posture Detected",
-                    message = "Current posture is ${latest.posture}. Please align your neck over your shoulders."
-                )
-                AlertManager.triggerHapticFeedback(context, 400L)
+                val ts = latest.timestamp ?: 0L
+                if (ts > lastAlertedTimestamp) {
+                    lastAlertedTimestamp = ts
+                    AlertManager.triggerBadPostureNotification(
+                        context,
+                        title = "Poor Posture Detected",
+                        message = "Current posture is ${latest.posture}. Please align your neck over your shoulders."
+                    )
+                    AlertManager.triggerHapticFeedback(context, 400L)
+                }
             }
         }
     }
@@ -117,7 +123,38 @@ fun HomeScreen() {
     DisposableEffect(context) {
         DeviceStatusManager.startListening()
         DeviceStatusManager.registerSystemListeners(context)
+
+        val postureListener = listenToPostureData(
+            onDataUpdated = { today, latest ->
+                todayData = today
+                currentPosture = latest
+                loading = false
+
+                // Trigger alert only when a NEW poor posture reading arrives
+                if (latest != null && (latest.posture == "Poor" || latest.posture == "Very poor")) {
+                    val ts = latest.timestamp ?: 0L
+                    if (ts > lastAlertedTimestamp) {
+                        lastAlertedTimestamp = ts
+                        AlertManager.triggerBadPostureNotification(
+                            context,
+                            title = "Poor Posture Detected",
+                            message = "Current posture is ${latest.posture}. Please align your neck over your shoulders."
+                        )
+                        AlertManager.triggerHapticFeedback(context, 400L)
+                    }
+                } else if (latest != null && latest.timestamp != null) {
+                    if (latest.timestamp > lastAlertedTimestamp) {
+                        lastAlertedTimestamp = latest.timestamp
+                    }
+                }
+            },
+            onError = {
+                loading = false
+            }
+        )
+
         onDispose {
+            postureListener.remove()
             DeviceStatusManager.unregisterSystemListeners(context)
             DeviceStatusManager.stopListening()
         }
@@ -511,10 +548,4 @@ private fun SummaryMetric(icon: ImageVector, value: String, label: String, color
         Text(value, color = color, fontSize = 21.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         Text(label, color = TextGray, fontSize = 11.sp, lineHeight = 15.sp, textAlign = TextAlign.Center)
     }
-}
-
-private fun calculateActiveMinutes(data: List<PostureData>): Int {
-    val timestamps = data.mapNotNull { it.timestamp }
-    if (timestamps.size < 2) return 0
-    return max(1, ((timestamps.maxOrNull()!! - timestamps.minOrNull()!!) / 60L).toInt())
 }
