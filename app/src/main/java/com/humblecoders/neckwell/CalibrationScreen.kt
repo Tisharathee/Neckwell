@@ -32,6 +32,15 @@ import java.util.concurrent.Executors
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+
 private const val REQUIRED_STABLE_FRAMES = 30  // ~1 sec at 30fps
 
 private fun playBeepTone(toneType: Int = ToneGenerator.TONE_PROP_BEEP, durationMs: Int = 250, context: android.content.Context? = null) {
@@ -66,6 +75,9 @@ fun CalibrationScreen(navController: NavController) {
     var capturedRawCva by remember { mutableFloatStateOf(0f) }
     var capturedLateralTilt by remember { mutableFloatStateOf(0f) }
     var capturedImageFile by remember { mutableStateOf<java.io.File?>(null) }
+    var liveMetrics by remember { mutableStateOf<PostureMetrics?>(null) }
+    var capturedMetrics by remember { mutableStateOf<PostureMetrics?>(null) }
+    var showTelemetryDetails by remember { mutableStateOf(false) }
 
     // ESP32 / Firebase sensor state
     var espStatus by remember { mutableStateOf("Idle") }
@@ -158,8 +170,11 @@ fun CalibrationScreen(navController: NavController) {
                     // Stop updating camera state once calibration has been triggered
                     if (calibrationTriggered) return@CameraPreviewWithAnalysis
 
+                    liveMetrics = metrics
                     if (metrics == null) {
-                        statusText = "No person detected"
+                        statusText = "Turn sideways — show ear & shoulder"
+                        cvaValue = 0f
+                        lateralTiltValue = 0f
                         stableFrames = 0
                     } else {
                         statusText = metrics.reason
@@ -169,7 +184,7 @@ fun CalibrationScreen(navController: NavController) {
                         if (PostureAnalyzer.DEV_MODE) {
                             android.util.Log.d(
                                 "CalibrationScreen",
-                                "CVA=${"%.1f".format(metrics.cva)}°, Threshold=${PostureAnalyzer.CVA_MIN}°, Posture=${metrics.posture}, isCorrect=${metrics.isCorrect}, stableFrames=$stableFrames/$REQUIRED_STABLE_FRAMES"
+                                "CVA=${"%.1f".format(metrics.cva)}°, NormCVA=${"%.1f".format(metrics.cvaNormalizedSpace)}°, Threshold=${PostureAnalyzer.CVA_MIN}°, Posture=${metrics.posture}, isCorrect=${metrics.isCorrect}, stableFrames=$stableFrames/$REQUIRED_STABLE_FRAMES"
                             )
                         }
 
@@ -180,6 +195,7 @@ fun CalibrationScreen(navController: NavController) {
                             calibrationTriggered = true
                             capturedRawCva = metrics.cva
                             capturedLateralTilt = metrics.lateralTilt
+                            capturedMetrics = metrics
                             statusText = "Good posture captured! Waiting for ESP32 to calibrate…"
 
                             // Save captured frame image and log raw telemetry asynchronously
@@ -188,8 +204,7 @@ fun CalibrationScreen(navController: NavController) {
                                 val savedFile = CalibrationLogger.saveCalibrationCapture(
                                     context = context,
                                     bitmap = bitmapCopy,
-                                    rawCva = metrics.cva,
-                                    lateralTilt = metrics.lateralTilt
+                                    metrics = metrics
                                 )
                                 capturedImageFile = savedFile
                             }
@@ -217,6 +232,10 @@ fun CalibrationScreen(navController: NavController) {
                 }
             )
 
+            // Visual Debug Landmark Overlay (Live or Frozen on Capture)
+            val displayMetrics = if (calibrationTriggered) capturedMetrics else liveMetrics
+            PostureLandmarkOverlay(metrics = displayMetrics)
+
             // Flash overlay for micro-interaction
             androidx.compose.animation.AnimatedVisibility(
                 visible = showFlash,
@@ -230,45 +249,73 @@ fun CalibrationScreen(navController: NavController) {
             Card(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xCC000000))
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xE6101820))
             ) {
-                Column(Modifier.padding(16.dp)) {
+                Column(Modifier.padding(14.dp)) {
 
                     androidx.compose.animation.Crossfade(targetState = statusText) { text ->
-                        Text(text, color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(text, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(6.dp))
 
                     // Camera readings (CVA / Pitch and Lateral Tilt / Roll)
                     if (!calibrationTriggered) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "Live CVA: ${"%.1f".format(cvaValue)}°",
+                                color = if (PostureAnalyzer.isGoodPosture(cvaValue)) Color(0xFF4EE1A0) else Color(0xFFFF6B6B),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "Raw: ${cvaValue}°",
+                                color = Color.LightGray,
+                                fontSize = 12.sp
+                            )
+                        }
                         Text(
-                            "Live CVA: ${"%.1f".format(cvaValue)}°  (Raw: ${cvaValue}°)",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            "Lateral Tilt (Roll): ${"%.1f".format(lateralTiltValue)}°",
+                            "Lateral Tilt (Roll): ${"%.1f".format(lateralTiltValue)}°  |  Stable: $stableFrames / $REQUIRED_STABLE_FRAMES",
                             color = Color.White.copy(alpha = 0.85f),
-                            fontSize = 13.sp
+                            fontSize = 12.sp
                         )
-                        Text(
-                            "Stable: $stableFrames / $REQUIRED_STABLE_FRAMES",
-                            color = if (stableFrames > 0) Color(0xFF4EE1A0) else Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Spacer(Modifier.height(8.dp))
+
+                        liveMetrics?.let { lm ->
+                            if (lm.tragusXPx > 0f || lm.c7XPx > 0f) {
+                                Spacer(Modifier.height(4.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        "Tragus: (${lm.tragusXPx.toInt()}, ${lm.tragusYPx.toInt()})  C7: (${lm.c7XPx.toInt()}, ${lm.c7YPx.toInt()})",
+                                        color = Color.Cyan.copy(alpha = 0.9f),
+                                        fontSize = 11.sp
+                                    )
+                                    Text(
+                                        "Frame: ${lm.imageWidth}x${lm.imageHeight}",
+                                        color = Color.Gray,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
                     } else if (capturedRawCva > 0f) {
                         // High-visibility captured CVA result card shown immediately upon capture
                         Surface(
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                            color = Color(0xFF1B4D3E).copy(alpha = 0.85f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF4EE1A0)),
+                            color = Color(0xFF133E32).copy(alpha = 0.92f),
+                            border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF4EE1A0)),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 6.dp)
+                                .padding(vertical = 4.dp)
                         ) {
                             Column(Modifier.padding(12.dp)) {
                                 Row(
@@ -277,14 +324,14 @@ fun CalibrationScreen(navController: NavController) {
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(
-                                        "CAPTURED CVA (CAMERA)",
+                                        "CAPTURED CVA (VALIDATION)",
                                         color = Color(0xFF4EE1A0),
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         letterSpacing = 1.sp
                                     )
                                     Text(
-                                        "Raw: ${"%.2f".format(capturedRawCva)}°",
+                                        "Raw: ${capturedRawCva}°",
                                         color = Color.LightGray,
                                         fontSize = 11.sp
                                     )
@@ -293,29 +340,60 @@ fun CalibrationScreen(navController: NavController) {
                                 Text(
                                     "CVA: ${"%.1f".format(capturedRawCva)}°",
                                     color = Color.White,
-                                    fontSize = 32.sp,
+                                    fontSize = 34.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
                                 Text(
-                                    "Lateral Tilt: ${"%.1f".format(capturedLateralTilt)}°  •  Raw Angle: ${capturedRawCva}°",
-                                    color = Color.White.copy(alpha = 0.85f),
-                                    fontSize = 12.sp
+                                    "Angle with Horiz: ${"%.1f".format(capturedMetrics?.cvaPixelSpace ?: capturedRawCva)}°  •  Angle with Vert: ${"%.1f".format(capturedMetrics?.angleWithVertical ?: (90f - capturedRawCva))}°",
+                                    color = Color.White.copy(alpha = 0.9f),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
                                 )
+                                Text(
+                                    "Aspect-Distorted Norm CVA: ${"%.1f".format(capturedMetrics?.cvaNormalizedSpace ?: capturedRawCva)}°  •  Lateral Tilt: ${"%.1f".format(capturedLateralTilt)}°",
+                                    color = Color.LightGray,
+                                    fontSize = 11.sp
+                                )
+
+                                Spacer(Modifier.height(6.dp))
+                                HorizontalDivider(color = Color(0xFF4EE1A0).copy(alpha = 0.3f), thickness = 0.5.dp)
+                                Spacer(Modifier.height(4.dp))
+
+                                // Raw landmark coordinates
+                                capturedMetrics?.let { m ->
+                                    Text(
+                                        "Tragus (Ear): (${"%.1f".format(m.tragusXPx)}, ${"%.1f".format(m.tragusYPx)}) px  [norm: ${"%.3f".format(m.tragusXNorm)}, ${"%.3f".format(m.tragusYNorm)}]",
+                                        color = Color.Cyan,
+                                        fontSize = 11.sp
+                                    )
+                                    Text(
+                                        "C7 Base: (${"%.1f".format(m.c7XPx)}, ${"%.1f".format(m.c7YPx)}) px  [norm: ${"%.3f".format(m.c7XNorm)}, ${"%.3f".format(m.c7YNorm)}]",
+                                        color = Color.Yellow,
+                                        fontSize = 11.sp
+                                    )
+                                    Text(
+                                        "Frame Dimensions: ${m.imageWidth}x${m.imageHeight} px (Aspect: ${"%.2f".format(m.imageWidth.toFloat() / maxOf(1, m.imageHeight))})",
+                                        color = Color.White.copy(alpha = 0.75f),
+                                        fontSize = 10.sp
+                                    )
+                                }
+
                                 capturedImageFile?.let { file ->
                                     Spacer(Modifier.height(4.dp))
                                     Text(
                                         "Logged: ${file.name}",
-                                        color = Color(0xFF4EE1A0).copy(alpha = 0.9f),
-                                        fontSize = 10.sp
+                                        color = Color(0xFF4EE1A0),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold
                                     )
                                 }
                             }
                         }
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(6.dp))
                     }
 
                     // ESP32 sensor section
-                    HorizontalDivider(color = Color.Gray, thickness = 0.5.dp)
+                    HorizontalDivider(color = Color.Gray.copy(alpha = 0.5f), thickness = 0.5.dp)
                     Spacer(Modifier.height(6.dp))
 
                     Text(
@@ -362,7 +440,7 @@ fun CalibrationScreen(navController: NavController) {
                     .align(Alignment.BottomCenter)
                     .padding(24.dp)
             ) {
-                Text(if (capturedBaseline != null) "Done" else if (calibrationTriggered) "Cancel" else "Cancel")
+                Text(if (capturedBaseline != null) "Done" else "Cancel")
             }
 
         } else {
@@ -384,6 +462,110 @@ fun CalibrationScreen(navController: NavController) {
     }
 }
 
+/**
+ * Visual landmark overlay rendering Tragus (Cyan), C7 Base (Yellow), connecting vector (Green),
+ * and horizontal reference line (Dashed White) with real-time degree readout.
+ */
+@Composable
+private fun PostureLandmarkOverlay(
+    metrics: PostureMetrics?,
+    modifier: Modifier = Modifier
+) {
+    if (metrics == null || (metrics.tragusXNorm == 0f && metrics.c7XNorm == 0f)) return
+
+    Canvas(modifier = modifier.fillMaxSize()) {
+        val viewW = size.width
+        val viewH = size.height
+        val imgW = if (metrics.imageWidth > 0) metrics.imageWidth.toFloat() else 1000f
+        val imgH = if (metrics.imageHeight > 0) metrics.imageHeight.toFloat() else 1000f
+
+        // Exact transform for PreviewView.ScaleType.FILL_CENTER
+        val scale = maxOf(viewW / imgW, viewH / imgH)
+        val scaledW = imgW * scale
+        val scaledH = imgH * scale
+        val offsetX = (viewW - scaledW) / 2f
+        val offsetY = (viewH - scaledH) / 2f
+
+        // Front camera image is mirrored horizontally in PreviewView
+        val tragusScreenX = offsetX + (1f - metrics.tragusXNorm) * scaledW
+        val tragusScreenY = offsetY + metrics.tragusYNorm * scaledH
+
+        val c7ScreenX = offsetX + (1f - metrics.c7XNorm) * scaledW
+        val c7ScreenY = offsetY + metrics.c7YNorm * scaledH
+
+        // 1. Horizontal reference line through C7 (dashed white)
+        val dashPath = Path().apply {
+            moveTo(0f, c7ScreenY)
+            lineTo(viewW, c7ScreenY)
+        }
+        drawPath(
+            path = dashPath,
+            color = Color.White.copy(alpha = 0.65f),
+            style = Stroke(
+                width = 2.dp.toPx(),
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(20f, 15f), 0f)
+            )
+        )
+
+        // 2. Vector line from C7 to Tragus (Mint green)
+        drawLine(
+            color = Color(0xFF4EE1A0),
+            start = Offset(c7ScreenX, c7ScreenY),
+            end = Offset(tragusScreenX, tragusScreenY),
+            strokeWidth = 3.5.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+
+        // 3. Tragus Landmark (Cyan circle with outer halo)
+        val tragusCenter = Offset(tragusScreenX, tragusScreenY)
+        drawCircle(
+            color = Color.Cyan.copy(alpha = 0.25f),
+            radius = 16.dp.toPx(),
+            center = tragusCenter
+        )
+        drawCircle(
+            color = Color.Cyan,
+            radius = 7.dp.toPx(),
+            center = tragusCenter
+        )
+
+        // 4. C7 / Neck Base Landmark (Yellow circle with outer halo)
+        val c7Center = Offset(c7ScreenX, c7ScreenY)
+        drawCircle(
+            color = Color.Yellow.copy(alpha = 0.25f),
+            radius = 16.dp.toPx(),
+            center = c7Center
+        )
+        drawCircle(
+            color = Color.Yellow,
+            radius = 7.dp.toPx(),
+            center = c7Center
+        )
+
+        // 5. Draw text annotations directly on Canvas
+        drawIntoCanvas { canvas ->
+            val paint = android.graphics.Paint().apply {
+                isAntiAlias = true
+                textSize = 12.sp.toPx()
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setShadowLayer(4f, 2f, 2f, android.graphics.Color.BLACK)
+            }
+
+            paint.color = android.graphics.Color.CYAN
+            canvas.nativeCanvas.drawText("Tragus (Ear)", tragusScreenX + 24f, tragusScreenY - 8f, paint)
+
+            paint.color = android.graphics.Color.YELLOW
+            canvas.nativeCanvas.drawText("C7 (Neck Base)", c7ScreenX + 24f, c7ScreenY + 28f, paint)
+
+            paint.color = android.graphics.Color.rgb(78, 225, 160)
+            paint.textSize = 14.sp.toPx()
+            val midX = (tragusScreenX + c7ScreenX) / 2f
+            val midY = (tragusScreenY + c7ScreenY) / 2f
+            canvas.nativeCanvas.drawText("CVA: ${"%.1f".format(metrics.cva)}°", midX + 16f, midY - 10f, paint)
+        }
+    }
+}
+
 @Composable
 private fun CameraPreviewWithAnalysis(onMetrics: (PostureMetrics?, android.graphics.Bitmap?) -> Unit) {
     val context = LocalContext.current
@@ -393,7 +575,11 @@ private fun CameraPreviewWithAnalysis(onMetrics: (PostureMetrics?, android.graph
     val helper = remember {
         PoseLandmarkerHelper(
             context = context,
-            onResult = { result, bitmap -> onMetrics(PostureAnalyzer.analyze(result), bitmap) },
+            onResult = { result, bitmap ->
+                val w = bitmap?.width ?: 0
+                val h = bitmap?.height ?: 0
+                onMetrics(PostureAnalyzer.analyze(result, w, h), bitmap)
+            },
             onError = { /* log if needed */ }
         )
     }
