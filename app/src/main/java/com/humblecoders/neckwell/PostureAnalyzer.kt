@@ -66,9 +66,9 @@ object PostureAnalyzer {
     // Correct estimation:
     // 1. Take the midpoint between left & right shoulder landmarks to locate the coronal spinal axis (not sideways).
     // 2. Elevate upward toward the head by 25%–35% of ear-to-shoulder distance (default 35%).
-    // 3. Shift inward/back along the neck (posteriorly toward dorsal spine, away from face) by ~22% of neck length.
+    // 3. Shift inward/back along the neck (posteriorly toward dorsal spine, away from face) by ~25% of neck length.
     const val DEFAULT_C7_NECK_UPWARD_RATIO = 0.35f   // 35% of ear-to-shoulder vertical distance
-    const val DEFAULT_C7_POSTERIOR_RATIO = 0.22f     // 22% of neck height backward toward dorsal neck
+    const val DEFAULT_C7_POSTERIOR_RATIO = 0.25f     // 25% of neck height backward toward dorsal neck
     const val DEFAULT_C7_TORSO_UPWARD_RATIO = 0.14f  // 14% of torso height (within 10–15% range)
     const val DEFAULT_C7_VERTICAL_OFFSET_RATIO = 0.35f // Legacy compatibility alias
 
@@ -81,7 +81,7 @@ object PostureAnalyzer {
      * Primary anatomical C7 estimator:
      * Takes the shoulder midpoint and scales proportionally by ear-to-shoulder distance:
      * moves upward toward the head (35% of ear-to-shoulder distance)
-     * and backward along the neck toward the dorsal spine (22% of ear-to-shoulder distance away from the face).
+     * and backward along the neck toward the dorsal spine (25% of ear-to-shoulder distance away from the face).
      */
     fun deriveC7Landmark(
         shoulderMidX: Float,

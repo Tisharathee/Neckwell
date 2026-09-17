@@ -228,7 +228,7 @@ class PostureAnalyzerTest {
         // Scaled proportionally by ear-to-shoulder distance:
         // Elevation (35%): dyUp = 0.35 * 0.20 = 0.070 -> C7 Y = 0.46 - 0.070 = 0.390
         // Facing left: nose < ear, posterior is +X.
-        // Posterior shift (22%): dxBack = 0.22 * 0.20 = 0.044 -> C7 X = 0.50 + 0.044 = 0.544
+        // Posterior shift (25%): dxBack = 0.25 * 0.20 = 0.050 -> C7 X = 0.50 + 0.050 = 0.550
         val (c7XLeft, c7YLeft) = PostureAnalyzer.deriveC7Landmark(
             shoulderMidX = 0.50f,
             shoulderMidY = 0.46f,
@@ -238,11 +238,11 @@ class PostureAnalyzerTest {
             hipMidY = null
         )
 
-        assertEquals(0.544f, c7XLeft, 0.002f)
+        assertEquals(0.550f, c7XLeft, 0.002f)
         assertEquals(0.390f, c7YLeft, 0.002f)
 
         // Facing right: ear is at 0.60, shoulder at 0.50
-        // Posterior is -X -> C7 X = 0.50 - 0.044 = 0.456
+        // Posterior is -X -> C7 X = 0.50 - 0.050 = 0.450
         val (c7XRight, c7YRight) = PostureAnalyzer.deriveC7Landmark(
             shoulderMidX = 0.50f,
             shoulderMidY = 0.46f,
@@ -252,7 +252,7 @@ class PostureAnalyzerTest {
             hipMidY = null
         )
 
-        assertEquals(0.456f, c7XRight, 0.002f)
+        assertEquals(0.450f, c7XRight, 0.002f)
         assertEquals(0.390f, c7YRight, 0.002f)
     }
 
@@ -262,11 +262,11 @@ class PostureAnalyzerTest {
         // Tragus: (154px, 248px), Shoulder Midpoint: (187px, 348px)
         // Ear-to-shoulder distance = 348 - 248 = 100px
         // Previously C7 was at (187px, 328px) with only 20px offset -> dy=80, dx=33 -> CVA=67.6° (~67.2°)
-        // With 35% vertical offset and 22% dorsal offset:
+        // With 35% vertical offset and 25% dorsal offset:
         // dyUp = 0.35 * 100 = 35px -> C7 Y = 348 - 35 = 313px
-        // dxBack = 0.22 * 100 = 22px -> C7 X = 187 + 22 = 209px
-        // dy = 313 - 248 = 65px. dx = 209 - 154 = 55px.
-        // CVA = atan2(65, 55) * 180 / PI = 49.8°! (Drops directly into the 48°–50° good posture band!)
+        // dxBack = 0.25 * 100 = 25px -> C7 X = 187 + 25 = 212px
+        // dy = 313 - 248 = 65px. dx = 212 - 154 = 58px.
+        // CVA = atan2(65, 58) * 180 / PI = 48.3°! (Within the 48°–50° good posture band!)
         val (c7XNorm, c7YNorm) = PostureAnalyzer.deriveC7Landmark(
             shoulderMidX = 0.187f,
             shoulderMidY = 0.348f,
@@ -288,11 +288,11 @@ class PostureAnalyzerTest {
             rawShoulderY = 0.348f
         )
 
-        assertEquals(49.8f, metrics.cva, 0.5f)
+        assertEquals(48.3f, metrics.cva, 0.5f)
         assertTrue("Expected CVA to drop into 48°–50° good posture band", metrics.isCorrect)
         assertEquals("Good", metrics.posture)
         assertEquals(313f, metrics.c7YPx, 1.0f)
-        assertEquals(209f, metrics.c7XPx, 1.0f)
+        assertEquals(212f, metrics.c7XPx, 1.0f)
     }
 
     @Test
@@ -328,12 +328,12 @@ class PostureAnalyzerTest {
         val (c7XNeutral, c7YNeutral) = PostureAnalyzer.deriveC7Landmark(
             shoulderMidX = 0.520f,
             shoulderMidY = 0.460f,
-            earX = 0.450f,
+            earX = 0.455f,
             earY = 0.260f,
             isFacingLeft = true
         )
         val metricsNeutral = PostureAnalyzer.computeMetrics(
-            earX = 0.450f,
+            earX = 0.455f,
             earY = 0.260f,
             earVis = 0.95f,
             shX = c7XNeutral,

@@ -10,6 +10,11 @@ import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 
+/**
+ * Helper class for MediaPipe Pose Landmarker execution.
+ * Raw landmarks detected here are processed by [PostureAnalyzer.analyze] to anatomically derive
+ * the C7 vertebra prominens (neck base) point relative to the shoulder midpoint and tragus.
+ */
 class PoseLandmarkerHelper(
     context: Context,
     private val onResult: (PoseLandmarkerResult, Bitmap?) -> Unit,
