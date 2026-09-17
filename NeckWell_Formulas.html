@@ -267,12 +267,12 @@
     <div class="eq-math">
       $$\text{Posture}(\theta_{\text{CVA}}, \Delta x) = 
       \begin{cases} 
-        \text{"Good"} & \text{if } \theta_{\text{CVA}} \ge 48.0^\circ \;\land\; \Delta x \le 0.16 \\ 
-        \text{"Poor"} & \text{if } \theta_{\text{CVA}} < 48.0^\circ \;\lor\; \Delta x > 0.16 
+        \text{"Good"} & \text{if } 48.0^\circ \le \theta_{\text{CVA}} \le 50.0^\circ \;\land\; \Delta x \le 0.16 \\ 
+        \text{"Poor"} & \text{if } (\theta_{\text{CVA}} < 48.0^\circ \;\lor\; \theta_{\text{CVA}} > 50.0^\circ) \;\lor\; \Delta x > 0.16 
       \end{cases}$$
     </div>
     <div class="eq-desc">
-      $\theta_{\text{CVA}} = 48.0^\circ$ is the standard clinical cutoff separating neutral cervical alignment from Forward Head Posture (FHP). $\Delta x \le 0.16$ prevents excessive anterior translation.
+      $\theta_{\text{CVA}} \in [48.0^\circ, 50.0^\circ]$ is the validated clinical target range for neutral upright cervical alignment. Angles $< 48.0^\circ$ indicate Forward Head Posture (FHP), while angles $> 50.0^\circ$ indicate cervical hyperextension (head tilted back). $\Delta x \le 0.16$ prevents excessive anterior translation.
     </div>
   </div>
 
@@ -298,7 +298,7 @@
   <div class="eq-box">
     <div class="eq-title">1.7 Composite Posture Verification Function</div>
     <div class="eq-math">
-      $$\text{isCorrect} = \mathbb{I}\Big( (\theta_{\text{CVA}} \ge 48^\circ) \;\land\; (\Delta x \le 0.16) \;\land\; (|\theta_{\text{roll}}| \le 15^\circ) \;\land\; (|x_{\text{midShoulder}} - x_{\text{midHip}}| \le 0.08) \Big)$$
+      $$\text{isCorrect} = \mathbb{I}\Big( (48.0^\circ \le \theta_{\text{CVA}} \le 50.0^\circ) \;\land\; (\Delta x \le 0.16) \;\land\; (|\theta_{\text{roll}}| \le 15^\circ) \;\land\; (|x_{\text{midShoulder}} - x_{\text{midHip}}| \le 0.08) \Big)$$
     </div>
   </div>
 
@@ -463,9 +463,9 @@
     </thead>
     <tbody>
       <tr>
-        <td><code>CVA_MIN</code> ($\theta_{\text{CVA}}$)</td>
-        <td>$\ge 48.0^\circ$</td>
-        <td>Clinical Craniovertebral Angle cutoff for upright vs Forward Head Posture.</td>
+        <td><code>CVA_MIN</code>, <code>CVA_MAX</code> ($\theta_{\text{CVA}}$)</td>
+        <td>$48.0^\circ - 50.0^\circ$</td>
+        <td>Clinical Craniovertebral Angle target range for neutral upright posture (inclusive).</td>
       </tr>
       <tr>
         <td><code>MAX_EAR_SHOULDER_DX</code> ($\Delta x$)</td>

@@ -149,23 +149,43 @@ class CvaComputationTest {
 
     @Test
     fun testHorizontalAngleAndVerticalComplementaryAngle() {
-        // CVA = 53.0° upright neutral
+        // CVA = 49.0° upright neutral
         val metrics = PostureAnalyzer.computeMetrics(
             earX = 0.50f,
             earY = 0.30f,
             earVis = 0.95f,
             shX = 0.50f + (100f / 1000f),
-            shY = 0.30f + ((100f * tan(Math.toRadians(53.0))).toFloat() / 1000f),
+            shY = 0.30f + ((100f * tan(Math.toRadians(49.0))).toFloat() / 1000f),
             shVis = 0.95f,
             imageWidth = 1000,
             imageHeight = 1000
         )
 
-        assertEquals(53.0f, metrics.cva, 0.1f)
-        // Horizontal angle = 53.0°
-        assertEquals(53.0f, metrics.cvaPixelSpace, 0.1f)
-        // Vertical angle = 90° - 53° = 37.0°
-        assertEquals(37.0f, metrics.angleWithVertical, 0.1f)
+        assertEquals(49.0f, metrics.cva, 0.1f)
+        // Horizontal angle = 49.0°
+        assertEquals(49.0f, metrics.cvaPixelSpace, 0.1f)
+        // Vertical angle = 90° - 49° = 41.0°
+        assertEquals(41.0f, metrics.angleWithVertical, 0.1f)
+        assertTrue("Expected 49.0° to be classified as correct within 48°–50° band", metrics.isCorrect)
+        assertEquals("Good", metrics.posture)
+    }
+
+    @Test
+    fun testHyperextended64_8DegClassifiedAsPoor() {
+        val metrics = PostureAnalyzer.computeMetrics(
+            earX = 0.40f,
+            earY = 0.40f - ((100f * tan(Math.toRadians(64.8))).toFloat() / 1000f),
+            earVis = 0.95f,
+            shX = 0.50f,
+            shY = 0.40f,
+            shVis = 0.95f,
+            imageWidth = 1000,
+            imageHeight = 1000
+        )
+        assertEquals(64.8f, metrics.cva, 0.2f)
+        assertFalse("64.8° must be classified as incorrect (> 50°)", metrics.isCorrect)
+        assertEquals("Poor", metrics.posture)
+        assertTrue(metrics.reason.contains("head tilted back"))
     }
 
     @Test

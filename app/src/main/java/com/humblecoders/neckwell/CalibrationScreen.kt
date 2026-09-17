@@ -184,7 +184,7 @@ fun CalibrationScreen(navController: NavController) {
                         if (PostureAnalyzer.DEV_MODE) {
                             android.util.Log.d(
                                 "CalibrationScreen",
-                                "CVA=${"%.1f".format(metrics.cva)}°, NormCVA=${"%.1f".format(metrics.cvaNormalizedSpace)}°, Threshold=${PostureAnalyzer.CVA_MIN}°, Posture=${metrics.posture}, isCorrect=${metrics.isCorrect}, stableFrames=$stableFrames/$REQUIRED_STABLE_FRAMES"
+                                "CVA=${"%.1f".format(metrics.cva)}°, NormCVA=${"%.1f".format(metrics.cvaNormalizedSpace)}°, TargetRange=[${PostureAnalyzer.CVA_MIN.toInt()}°..${PostureAnalyzer.CVA_MAX.toInt()}°], Posture=${metrics.posture}, isCorrect=${metrics.isCorrect}, stableFrames=$stableFrames/$REQUIRED_STABLE_FRAMES"
                             )
                         }
 
@@ -274,9 +274,9 @@ fun CalibrationScreen(navController: NavController) {
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                "Raw: ${cvaValue}°",
+                                "Target: ${PostureAnalyzer.CVA_MIN.toInt()}°–${PostureAnalyzer.CVA_MAX.toInt()}° (Raw: ${cvaValue}°)",
                                 color = Color.LightGray,
-                                fontSize = 12.sp
+                                fontSize = 11.sp
                             )
                         }
                         Text(
@@ -339,9 +339,15 @@ fun CalibrationScreen(navController: NavController) {
                                 Spacer(Modifier.height(2.dp))
                                 Text(
                                     "CVA: ${"%.1f".format(capturedRawCva)}°",
-                                    color = Color.White,
+                                    color = if (PostureAnalyzer.isGoodPosture(capturedRawCva)) Color.White else Color(0xFFFF6B6B),
                                     fontSize = 34.sp,
                                     fontWeight = FontWeight.ExtraBold
+                                )
+                                Text(
+                                    "Target Band: ${PostureAnalyzer.CVA_MIN.toInt()}°–${PostureAnalyzer.CVA_MAX.toInt()}°  •  Posture: ${capturedMetrics?.posture ?: PostureAnalyzer.classifyPosture(capturedRawCva)}",
+                                    color = if (PostureAnalyzer.isGoodPosture(capturedRawCva)) Color(0xFF4EE1A0) else Color(0xFFFF6B6B),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
                                 Text(
                                     "Angle with Horiz: ${"%.1f".format(capturedMetrics?.cvaPixelSpace ?: capturedRawCva)}°  •  Angle with Vert: ${"%.1f".format(capturedMetrics?.angleWithVertical ?: (90f - capturedRawCva))}°",

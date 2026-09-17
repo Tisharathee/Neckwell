@@ -44,13 +44,14 @@ object PostureAnalyzer {
     private const val LEFT_HIP = 23
     private const val RIGHT_HIP = 24
 
-    // Clinical standard for Craniovertebral Angle (CVA):
-    // Normal upright posture: CVA >= 48°
-    // Forward head posture (FHP / poor posture): CVA < 48°
+    // Target clinical range for Craniovertebral Angle (CVA):
+    // Good posture: CVA is within 48°–50° (inclusive)
+    // Poor posture: CVA < 48° (forward head tilt) or CVA > 50° (hyperextension / head tilted back)
     const val CVA_MIN = 48f
+    const val CVA_MAX = 50f
 
-    fun isGoodPosture(cva: Float): Boolean = cva >= CVA_MIN
-    fun isPoorPosture(cva: Float): Boolean = cva < CVA_MIN
+    fun isGoodPosture(cva: Float): Boolean = cva in CVA_MIN..CVA_MAX
+    fun isPoorPosture(cva: Float): Boolean = !isGoodPosture(cva)
     fun classifyPosture(cva: Float): String = if (isGoodPosture(cva)) "Good" else "Poor"
 
     // Maximum allowed forward horizontal distance between ear and shoulder in normalized coords
@@ -231,8 +232,10 @@ object PostureAnalyzer {
 
         val reason = when {
             isCorrect -> "Good posture — hold still"
-            !cvaOk || !dxOk -> "Sit straight (CVA: ${"%.1f".format(cvaPixel)}°, dx: ${"%.2f".format(dxNorm)})"
             !rollOk -> "Level your head (tilt: ${lateralTilt.toInt()}°)"
+            cvaPixel < CVA_MIN -> "Sit straight — head forward (CVA: ${"%.1f".format(cvaPixel)}° < 48°)"
+            cvaPixel > CVA_MAX -> "Sit natural — head tilted back (CVA: ${"%.1f".format(cvaPixel)}° > 50°)"
+            !dxOk -> "Align head with shoulders (dx: ${"%.2f".format(dxNorm)})"
             !alignmentOk -> "Align shoulders over hips"
             else -> "Adjust posture"
         }
@@ -248,7 +251,7 @@ object PostureAnalyzer {
                     "dxPx=${"%.1f".format(dxPx)}, dyPx=${"%.1f".format(dyPx)} | " +
                     "Frame=${w}x${h} (aspect=${"%.2f".format(w.toFloat() / h)}) | " +
                     "CVA(pixel)=${"%.1f".format(cvaPixel)}°, CVA(norm)=${"%.1f".format(cvaNorm)}°, " +
-                    "VertAngle=${"%.1f".format(angleWithVertical)}° | Posture=$posture"
+                    "VertAngle=${"%.1f".format(angleWithVertical)}° | TargetBand=[${CVA_MIN}..${CVA_MAX}] | Posture=$posture (cvaOk=$cvaOk, isCorrect=$isCorrect, reason='$reason')"
             )
         }
 
