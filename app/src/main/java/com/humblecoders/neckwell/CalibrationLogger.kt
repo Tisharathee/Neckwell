@@ -156,21 +156,21 @@ object CalibrationLogger {
                 // A. Horizontal reference line through C7
                 canvas.drawLine(0f, cY, imgW, cY, paintDashed)
 
-                // B. Vertical offset from shoulder joint up to C7 neck base
-                if (sY > cY + 2f) {
+                // B. Offset path from shoulder midpoint up & back to C7 neck base
+                if (sY > cY + 2f || Math.abs(sX - cX) > 2f) {
                     canvas.drawLine(sX, sY, cX, cY, paintShoulderOffset)
                 }
 
                 // C. C7 to Tragus vector line
                 canvas.drawLine(cX, cY, tX, tY, paintLine)
 
-                // D. Shoulder Joint (Orange circle)
+                // D. Shoulder Midpoint (Orange circle)
                 val dotRadius = maxOf(10f, imgW / 55f)
-                if (sY > cY + 2f) {
+                if (sY > cY + 2f || Math.abs(sX - cX) > 2f) {
                     paintCircle.color = android.graphics.Color.rgb(255, 165, 0)
                     canvas.drawCircle(sX, sY, dotRadius * 0.75f, paintCircle)
                     paintText.color = android.graphics.Color.rgb(255, 180, 50)
-                    canvas.drawText("Shoulder Joint (${"%.1f".format(metrics.shoulderXPx)}, ${"%.1f".format(metrics.shoulderYPx)})", sX + dotRadius + 8f, sY + dotRadius, paintText)
+                    canvas.drawText("Shoulder Midpoint (${"%.1f".format(metrics.shoulderXPx)}, ${"%.1f".format(metrics.shoulderYPx)})", sX + dotRadius + 8f, sY + dotRadius, paintText)
                 }
 
                 // E. Tragus Landmark (Cyan circle)
@@ -192,8 +192,8 @@ object CalibrationLogger {
                     style = android.graphics.Paint.Style.FILL
                 }
                 canvas.drawRect(0f, 0f, imgW, paintText.textSize * 3.8f, bannerPaint)
-                canvas.drawText("CVA: ${"%.1f".format(metrics.cva)}°  |  Target: [${PostureAnalyzer.CVA_MIN.toInt()}°–${PostureAnalyzer.CVA_MAX.toInt()}°]  |  C7 Derived (+20% Neck Base)", 20f, paintText.textSize * 1.3f, paintText)
-                canvas.drawText("Tragus: (${metrics.tragusXPx.toInt()}, ${metrics.tragusYPx.toInt()})  |  C7: (${metrics.c7XPx.toInt()}, ${metrics.c7YPx.toInt()})  |  Shoulder: (${metrics.shoulderXPx.toInt()}, ${metrics.shoulderYPx.toInt()})", 20f, paintText.textSize * 2.7f, paintText)
+                canvas.drawText("CVA: ${"%.1f".format(metrics.cva)}°  |  Target: [${PostureAnalyzer.CVA_MIN.toInt()}°–${PostureAnalyzer.CVA_MAX.toInt()}°]  |  C7 Estimated at Neck Base", 20f, paintText.textSize * 1.3f, paintText)
+                canvas.drawText("Tragus: (${metrics.tragusXPx.toInt()}, ${metrics.tragusYPx.toInt()})  |  C7: (${metrics.c7XPx.toInt()}, ${metrics.c7YPx.toInt()})  |  ShoulderMid: (${metrics.shoulderXPx.toInt()}, ${metrics.shoulderYPx.toInt()})", 20f, paintText.textSize * 2.7f, paintText)
 
                 FileOutputStream(imageFile).use { out ->
                     annotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)

@@ -377,9 +377,9 @@ fun CalibrationScreen(navController: NavController) {
                                         color = Color.Yellow,
                                         fontSize = 11.sp
                                     )
-                                    if (m.shoulderYPx > m.c7YPx + 2f) {
+                                    if (m.shoulderYPx > m.c7YPx + 2f || Math.abs(m.shoulderXPx - m.c7XPx) > 2f) {
                                         Text(
-                                            "Shoulder Joint: (${"%.1f".format(m.shoulderXPx)}, ${"%.1f".format(m.shoulderYPx)}) px  (C7 elevated +20% toward ear)",
+                                            "Shoulder Midpoint: (${"%.1f".format(m.shoulderXPx)}, ${"%.1f".format(m.shoulderYPx)}) px  (C7 adjusted upward & back to neck base)",
                                             color = Color(0xFFFFB74D),
                                             fontSize = 10.sp
                                         )
@@ -523,8 +523,8 @@ private fun PostureLandmarkOverlay(
             )
         )
 
-        // 2. Dotted derivation offset line from shoulder joint up to C7 neck base
-        if (shoulderScreenY > c7ScreenY + 2f) {
+        // 2. Dotted derivation offset line from shoulder midpoint up & back to C7 neck base
+        if (shoulderScreenY > c7ScreenY + 2f || Math.abs(shoulderScreenX - c7ScreenX) > 2f) {
             val offsetPath = Path().apply {
                 moveTo(shoulderScreenX, shoulderScreenY)
                 lineTo(c7ScreenX, c7ScreenY)
@@ -537,7 +537,7 @@ private fun PostureLandmarkOverlay(
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f), 0f)
                 )
             )
-            // Shoulder Joint Dot (Orange)
+            // Shoulder Midpoint Dot (Orange)
             drawCircle(
                 color = Color(0xFFFF9800),
                 radius = 5.dp.toPx(),
@@ -595,9 +595,9 @@ private fun PostureLandmarkOverlay(
             paint.color = android.graphics.Color.YELLOW
             canvas.nativeCanvas.drawText("C7 (Neck Base)", c7ScreenX + 24f, c7ScreenY - 8f, paint)
 
-            if (shoulderScreenY > c7ScreenY + 2f) {
+            if (shoulderScreenY > c7ScreenY + 2f || Math.abs(shoulderScreenX - c7ScreenX) > 2f) {
                 paint.color = android.graphics.Color.rgb(255, 165, 0)
-                canvas.nativeCanvas.drawText("Shoulder Joint", shoulderScreenX + 18f, shoulderScreenY + 16f, paint)
+                canvas.nativeCanvas.drawText("Shoulder Midpoint", shoulderScreenX + 18f, shoulderScreenY + 16f, paint)
             }
 
             paint.color = android.graphics.Color.rgb(78, 225, 160)
