@@ -220,4 +220,71 @@ class PostureAnalyzerTest {
             }
         }
     }
+
+    @Test
+    fun testDeriveC7LandmarkElevationFromShoulder() {
+        // Shoulder at (0.50, 0.45), Ear at (0.40, 0.25)
+        // Vertical distance = 0.45 - 0.25 = 0.20
+        // With 20% vertical offset:
+        // C7 Y = 0.45 - (0.20 * 0.20) = 0.41
+        // C7 X = 0.50
+        val (c7X, c7Y) = PostureAnalyzer.deriveC7Landmark(
+            shoulderX = 0.50f,
+            shoulderY = 0.45f,
+            earX = 0.40f,
+            earY = 0.25f,
+            verticalOffsetRatio = 0.20f
+        )
+
+        assertEquals(0.50f, c7X, 0.001f)
+        assertEquals(0.41f, c7Y, 0.001f)
+    }
+
+    @Test
+    fun testCvaShiftFromShoulderToDerivedC7() {
+        // In a 1000x1000 frame:
+        // Shoulder Joint at (500px, 450px)
+        // Ear at (326px, 250px) -> dx = 174px
+        // 1. Raw Shoulder CVA: dy = 450 - 250 = 200px.
+        // tan(CVA_shoulder) = 200 / 174 ≈ 1.1494 -> CVA ≈ 49.0° (artificially within band)
+        val metricsRawShoulder = PostureAnalyzer.computeMetrics(
+            earX = 0.326f,
+            earY = 0.250f,
+            earVis = 0.95f,
+            shX = 0.500f,
+            shY = 0.450f,
+            shVis = 0.95f,
+            imageWidth = 1000,
+            imageHeight = 1000
+        )
+        assertEquals(49.0f, metricsRawShoulder.cva, 0.2f)
+
+        // 2. Corrected C7 Neck Base Landmark:
+        // Elevated 20% upward: C7 Y = 0.450 - (0.20 * 0.200) = 0.410 (410px)
+        // Corrected dy = 410 - 250 = 160px.
+        // tan(CVA_c7) = 160 / 174 ≈ 0.9195 -> CVA ≈ 42.6° (accurately reveals forward head posture!)
+        val (c7X, c7Y) = PostureAnalyzer.deriveC7Landmark(0.500f, 0.450f, 0.326f, 0.250f)
+        val metricsDerivedC7 = PostureAnalyzer.computeMetrics(
+            earX = 0.326f,
+            earY = 0.250f,
+            earVis = 0.95f,
+            shX = c7X,
+            shY = c7Y,
+            shVis = 0.95f,
+            imageWidth = 1000,
+            imageHeight = 1000,
+            rawShoulderX = 0.500f,
+            rawShoulderY = 0.450f
+        )
+        assertEquals(42.6f, metricsDerivedC7.cva, 0.3f)
+        // Correctly flags as Poor posture because actual CVA from neck base is 42.6° (< 48°)
+        assertEquals("Poor", metricsDerivedC7.posture)
+        assertFalse(metricsDerivedC7.isCorrect)
+
+        // Verifies raw shoulder coords are preserved alongside C7
+        assertEquals(500f, metricsDerivedC7.shoulderXPx, 0.1f)
+        assertEquals(450f, metricsDerivedC7.shoulderYPx, 0.1f)
+        assertEquals(500f, metricsDerivedC7.c7XPx, 0.1f)
+        assertEquals(410f, metricsDerivedC7.c7YPx, 0.1f)
+    }
 }

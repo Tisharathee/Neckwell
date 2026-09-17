@@ -253,12 +253,23 @@
   </div>
 
   <div class="eq-box">
-    <div class="eq-title">1.3 Craniovertebral Angle (CVA / Pitch)</div>
+    <div class="eq-title">1.3 Derived C7 (Neck Base) Anatomical Estimation</div>
     <div class="eq-math">
-      $$\theta_{\text{CVA}} = \operatorname{atan2}(\Delta y, \Delta x) \times \frac{180^\circ}{\pi}$$
+      $$y_{\text{C7}} = y_{\text{sh}} - 0.20 \cdot \max\big(0, \; y_{\text{sh}} - y_{\text{ear}}\big), \qquad x_{\text{C7}} = x_{\text{sh}}$$
+      $$\Delta X_{\text{px}} = |X_{\text{tragus, px}} - X_{\text{C7, px}}|, \qquad \Delta Y_{\text{px}} = Y_{\text{C7, px}} - Y_{\text{tragus, px}}$$
     </div>
     <div class="eq-desc">
-      Calculates the angle formed between the ear-to-shoulder vector and the horizontal reference plane.
+      MediaPipe's shoulder landmarks (11 & 12) identify the acromion / glenohumeral joint, which sits inferior to the C7 spinous process (neck base). C7 is derived by elevating $20\%$ upward along the vertical vector from the shoulder midpoint toward the tragus/ear level.
+    </div>
+  </div>
+
+  <div class="eq-box">
+    <div class="eq-title">1.4 Craniovertebral Angle (CVA / Pitch)</div>
+    <div class="eq-math">
+      $$\theta_{\text{CVA}} = \operatorname{atan2}(\Delta Y_{\text{px}}, \Delta X_{\text{px}}) \times \frac{180^\circ}{\pi}, \qquad \theta_{\text{vert}} = 90^\circ - \theta_{\text{CVA}}$$
+    </div>
+    <div class="eq-desc">
+      Calculates the true anatomical angle formed between the line from C7 (neck base) to tragus and the horizontal reference plane through C7.
     </div>
   </div>
 

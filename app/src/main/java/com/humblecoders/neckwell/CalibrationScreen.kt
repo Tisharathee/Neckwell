@@ -365,7 +365,7 @@ fun CalibrationScreen(navController: NavController) {
                                 HorizontalDivider(color = Color(0xFF4EE1A0).copy(alpha = 0.3f), thickness = 0.5.dp)
                                 Spacer(Modifier.height(4.dp))
 
-                                // Raw landmark coordinates
+                                 // Raw landmark coordinates
                                 capturedMetrics?.let { m ->
                                     Text(
                                         "Tragus (Ear): (${"%.1f".format(m.tragusXPx)}, ${"%.1f".format(m.tragusYPx)}) px  [norm: ${"%.3f".format(m.tragusXNorm)}, ${"%.3f".format(m.tragusYNorm)}]",
@@ -373,10 +373,17 @@ fun CalibrationScreen(navController: NavController) {
                                         fontSize = 11.sp
                                     )
                                     Text(
-                                        "C7 Base: (${"%.1f".format(m.c7XPx)}, ${"%.1f".format(m.c7YPx)}) px  [norm: ${"%.3f".format(m.c7XNorm)}, ${"%.3f".format(m.c7YNorm)}]",
+                                        "C7 Neck Base: (${"%.1f".format(m.c7XPx)}, ${"%.1f".format(m.c7YPx)}) px  [norm: ${"%.3f".format(m.c7XNorm)}, ${"%.3f".format(m.c7YNorm)}]",
                                         color = Color.Yellow,
                                         fontSize = 11.sp
                                     )
+                                    if (m.shoulderYPx > m.c7YPx + 2f) {
+                                        Text(
+                                            "Shoulder Joint: (${"%.1f".format(m.shoulderXPx)}, ${"%.1f".format(m.shoulderYPx)}) px  (C7 elevated +20% toward ear)",
+                                            color = Color(0xFFFFB74D),
+                                            fontSize = 10.sp
+                                        )
+                                    }
                                     Text(
                                         "Frame Dimensions: ${m.imageWidth}x${m.imageHeight} px (Aspect: ${"%.2f".format(m.imageWidth.toFloat() / maxOf(1, m.imageHeight))})",
                                         color = Color.White.copy(alpha = 0.75f),
@@ -499,6 +506,9 @@ private fun PostureLandmarkOverlay(
         val c7ScreenX = offsetX + (1f - metrics.c7XNorm) * scaledW
         val c7ScreenY = offsetY + metrics.c7YNorm * scaledH
 
+        val shoulderScreenX = offsetX + (1f - metrics.shoulderXNorm) * scaledW
+        val shoulderScreenY = offsetY + metrics.shoulderYNorm * scaledH
+
         // 1. Horizontal reference line through C7 (dashed white)
         val dashPath = Path().apply {
             moveTo(0f, c7ScreenY)
@@ -513,7 +523,29 @@ private fun PostureLandmarkOverlay(
             )
         )
 
-        // 2. Vector line from C7 to Tragus (Mint green)
+        // 2. Dotted derivation offset line from shoulder joint up to C7 neck base
+        if (shoulderScreenY > c7ScreenY + 2f) {
+            val offsetPath = Path().apply {
+                moveTo(shoulderScreenX, shoulderScreenY)
+                lineTo(c7ScreenX, c7ScreenY)
+            }
+            drawPath(
+                path = offsetPath,
+                color = Color(0xFFFF9800).copy(alpha = 0.75f),
+                style = Stroke(
+                    width = 2.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f), 0f)
+                )
+            )
+            // Shoulder Joint Dot (Orange)
+            drawCircle(
+                color = Color(0xFFFF9800),
+                radius = 5.dp.toPx(),
+                center = Offset(shoulderScreenX, shoulderScreenY)
+            )
+        }
+
+        // 3. Vector line from C7 to Tragus (Mint green)
         drawLine(
             color = Color(0xFF4EE1A0),
             start = Offset(c7ScreenX, c7ScreenY),
@@ -522,7 +554,7 @@ private fun PostureLandmarkOverlay(
             cap = StrokeCap.Round
         )
 
-        // 3. Tragus Landmark (Cyan circle with outer halo)
+        // 4. Tragus Landmark (Cyan circle with outer halo)
         val tragusCenter = Offset(tragusScreenX, tragusScreenY)
         drawCircle(
             color = Color.Cyan.copy(alpha = 0.25f),
@@ -535,7 +567,7 @@ private fun PostureLandmarkOverlay(
             center = tragusCenter
         )
 
-        // 4. C7 / Neck Base Landmark (Yellow circle with outer halo)
+        // 5. C7 / Neck Base Landmark (Yellow circle with outer halo)
         val c7Center = Offset(c7ScreenX, c7ScreenY)
         drawCircle(
             color = Color.Yellow.copy(alpha = 0.25f),
@@ -548,7 +580,7 @@ private fun PostureLandmarkOverlay(
             center = c7Center
         )
 
-        // 5. Draw text annotations directly on Canvas
+        // 6. Draw text annotations directly on Canvas
         drawIntoCanvas { canvas ->
             val paint = android.graphics.Paint().apply {
                 isAntiAlias = true
@@ -561,7 +593,12 @@ private fun PostureLandmarkOverlay(
             canvas.nativeCanvas.drawText("Tragus (Ear)", tragusScreenX + 24f, tragusScreenY - 8f, paint)
 
             paint.color = android.graphics.Color.YELLOW
-            canvas.nativeCanvas.drawText("C7 (Neck Base)", c7ScreenX + 24f, c7ScreenY + 28f, paint)
+            canvas.nativeCanvas.drawText("C7 (Neck Base)", c7ScreenX + 24f, c7ScreenY - 8f, paint)
+
+            if (shoulderScreenY > c7ScreenY + 2f) {
+                paint.color = android.graphics.Color.rgb(255, 165, 0)
+                canvas.nativeCanvas.drawText("Shoulder Joint", shoulderScreenX + 18f, shoulderScreenY + 16f, paint)
+            }
 
             paint.color = android.graphics.Color.rgb(78, 225, 160)
             paint.textSize = 14.sp.toPx()

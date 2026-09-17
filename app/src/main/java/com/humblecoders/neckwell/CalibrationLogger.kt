@@ -118,6 +118,8 @@ object CalibrationLogger {
                 val tY = metrics.tragusYNorm * imgH
                 val cX = metrics.c7XNorm * imgW
                 val cY = metrics.c7YNorm * imgH
+                val sX = metrics.shoulderXNorm * imgW
+                val sY = metrics.shoulderYNorm * imgH
 
                 val paintCircle = android.graphics.Paint().apply {
                     isAntiAlias = true
@@ -136,6 +138,13 @@ object CalibrationLogger {
                     color = android.graphics.Color.WHITE
                     pathEffect = android.graphics.DashPathEffect(floatArrayOf(20f, 15f), 0f)
                 }
+                val paintShoulderOffset = android.graphics.Paint().apply {
+                    isAntiAlias = true
+                    style = android.graphics.Paint.Style.STROKE
+                    strokeWidth = maxOf(2.5f, imgW / 240f)
+                    color = android.graphics.Color.rgb(255, 165, 0) // Orange
+                    pathEffect = android.graphics.DashPathEffect(floatArrayOf(12f, 10f), 0f)
+                }
                 val paintText = android.graphics.Paint().apply {
                     isAntiAlias = true
                     color = android.graphics.Color.WHITE
@@ -147,28 +156,44 @@ object CalibrationLogger {
                 // A. Horizontal reference line through C7
                 canvas.drawLine(0f, cY, imgW, cY, paintDashed)
 
-                // B. C7 to Tragus vector line
+                // B. Vertical offset from shoulder joint up to C7 neck base
+                if (sY > cY + 2f) {
+                    canvas.drawLine(sX, sY, cX, cY, paintShoulderOffset)
+                }
+
+                // C. C7 to Tragus vector line
                 canvas.drawLine(cX, cY, tX, tY, paintLine)
 
-                // C. Tragus Landmark (Cyan circle)
+                // D. Shoulder Joint (Orange circle)
                 val dotRadius = maxOf(10f, imgW / 55f)
+                if (sY > cY + 2f) {
+                    paintCircle.color = android.graphics.Color.rgb(255, 165, 0)
+                    canvas.drawCircle(sX, sY, dotRadius * 0.75f, paintCircle)
+                    paintText.color = android.graphics.Color.rgb(255, 180, 50)
+                    canvas.drawText("Shoulder Joint (${"%.1f".format(metrics.shoulderXPx)}, ${"%.1f".format(metrics.shoulderYPx)})", sX + dotRadius + 8f, sY + dotRadius, paintText)
+                }
+
+                // E. Tragus Landmark (Cyan circle)
                 paintCircle.color = android.graphics.Color.CYAN
+                paintText.color = android.graphics.Color.CYAN
                 canvas.drawCircle(tX, tY, dotRadius, paintCircle)
                 canvas.drawText("Tragus (${"%.1f".format(metrics.tragusXPx)}, ${"%.1f".format(metrics.tragusYPx)})", tX + dotRadius + 8f, tY + dotRadius, paintText)
 
-                // D. C7 / Neck Base Landmark (Yellow circle)
+                // F. C7 / Neck Base Landmark (Yellow circle)
                 paintCircle.color = android.graphics.Color.YELLOW
+                paintText.color = android.graphics.Color.YELLOW
                 canvas.drawCircle(cX, cY, dotRadius, paintCircle)
-                canvas.drawText("C7 Base (${"%.1f".format(metrics.c7XPx)}, ${"%.1f".format(metrics.c7YPx)})", cX + dotRadius + 8f, cY + dotRadius, paintText)
+                canvas.drawText("C7 Neck Base (${"%.1f".format(metrics.c7XPx)}, ${"%.1f".format(metrics.c7YPx)})", cX + dotRadius + 8f, cY - dotRadius / 2f, paintText)
 
-                // E. Header HUD banner
+                // G. Header HUD banner
+                paintText.color = android.graphics.Color.WHITE
                 val bannerPaint = android.graphics.Paint().apply {
                     color = android.graphics.Color.argb(190, 10, 20, 20)
                     style = android.graphics.Paint.Style.FILL
                 }
-                canvas.drawRect(0f, 0f, imgW, paintText.textSize * 3.6f, bannerPaint)
-                canvas.drawText("CVA (Pixel Space): ${"%.1f".format(metrics.cva)}°  |  Angle With Horiz", 20f, paintText.textSize * 1.3f, paintText)
-                canvas.drawText("Angle With Vert: ${"%.1f".format(metrics.angleWithVertical)}°  |  Norm CVA: ${"%.1f".format(metrics.cvaNormalizedSpace)}°  |  Frame: ${annotatedBitmap.width}x${annotatedBitmap.height}", 20f, paintText.textSize * 2.7f, paintText)
+                canvas.drawRect(0f, 0f, imgW, paintText.textSize * 3.8f, bannerPaint)
+                canvas.drawText("CVA: ${"%.1f".format(metrics.cva)}°  |  Target: [${PostureAnalyzer.CVA_MIN.toInt()}°–${PostureAnalyzer.CVA_MAX.toInt()}°]  |  C7 Derived (+20% Neck Base)", 20f, paintText.textSize * 1.3f, paintText)
+                canvas.drawText("Tragus: (${metrics.tragusXPx.toInt()}, ${metrics.tragusYPx.toInt()})  |  C7: (${metrics.c7XPx.toInt()}, ${metrics.c7YPx.toInt()})  |  Shoulder: (${metrics.shoulderXPx.toInt()}, ${metrics.shoulderYPx.toInt()})", 20f, paintText.textSize * 2.7f, paintText)
 
                 FileOutputStream(imageFile).use { out ->
                     annotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)

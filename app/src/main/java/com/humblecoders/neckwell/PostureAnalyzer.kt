@@ -25,7 +25,11 @@ data class PostureMetrics(
     val cvaPixelSpace: Float = cva,
     val cvaNormalizedSpace: Float = cva,
     val angleWithVertical: Float = 90f - cva,
-    val sideLabel: String = "Profile"
+    val sideLabel: String = "Profile",
+    val shoulderXNorm: Float = c7XNorm,
+    val shoulderYNorm: Float = c7YNorm,
+    val shoulderXPx: Float = c7XPx,
+    val shoulderYPx: Float = c7YPx
 )
 
 object PostureAnalyzer {
@@ -53,6 +57,31 @@ object PostureAnalyzer {
     fun isGoodPosture(cva: Float): Boolean = cva in CVA_MIN..CVA_MAX
     fun isPoorPosture(cva: Float): Boolean = !isGoodPosture(cva)
     fun classifyPosture(cva: Float): String = if (isGoodPosture(cva)) "Good" else "Poor"
+
+    // Derived C7 (Neck Base) Landmark Constants:
+    // MediaPipe's shoulder landmarks (11 & 12) identify the acromion / glenohumeral joint,
+    // which is anatomically lower than the C7 vertebra (cervical spine base).
+    // In photogrammetric posture analysis, C7 is approximately 20% upward from the
+    // shoulder joint midpoint toward the tragus/ear level along the vertical axis.
+    const val DEFAULT_C7_VERTICAL_OFFSET_RATIO = 0.20f
+    var c7VerticalOffsetRatio: Float = DEFAULT_C7_VERTICAL_OFFSET_RATIO
+
+    /**
+     * Derives the C7 neck base point from the shoulder position and ear landmark.
+     * Offsets vertically upward from the shoulder line toward the ear by verticalOffsetRatio (default 20%).
+     */
+    fun deriveC7Landmark(
+        shoulderX: Float,
+        shoulderY: Float,
+        earX: Float,
+        earY: Float,
+        verticalOffsetRatio: Float = c7VerticalOffsetRatio
+    ): Pair<Float, Float> {
+        val dyShoulderToEar = maxOf(0f, shoulderY - earY)
+        val c7Y = shoulderY - (verticalOffsetRatio * dyShoulderToEar)
+        val c7X = shoulderX
+        return Pair(c7X, c7Y)
+    }
 
     // Maximum allowed forward horizontal distance between ear and shoulder in normalized coords
     const val MAX_EAR_SHOULDER_DX = 0.16f
@@ -98,14 +127,22 @@ object PostureAnalyzer {
         val hipR = landmarks[RIGHT_HIP]
         val hipVisible = hipL.visibility().orElse(0f) >= 0.4f && hipR.visibility().orElse(0f) >= 0.4f
         val shoulderMidX = (leftShLm.x() + rightShLm.x()) / 2f
+        val shoulderMidY = (leftShLm.y() + rightShLm.y()) / 2f
         val hipMidX = (hipL.x() + hipR.x()) / 2f
         val shoulderAlignment = if (hipVisible) abs(shoulderMidX - hipMidX) else 0f
 
-        // C7 / Neck Base Estimation:
-        // In sagittal view, spinal midline is represented by the shoulder midpoint (landmarks 11 & 12).
-        // If one shoulder is heavily occluded, fall back to the visible shoulder.
-        val c7X = if (leftShVis >= 0.25f && rightShVis >= 0.25f) shoulderMidX else shLm.x()
-        val c7Y = if (leftShVis >= 0.25f && rightShVis >= 0.25f) (leftShLm.y() + rightShLm.y()) / 2f else shLm.y()
+        // 1. Raw Shoulder Joint Position (Midpoint if both visible, else profile shoulder)
+        val rawShoulderX = if (leftShVis >= 0.25f && rightShVis >= 0.25f) shoulderMidX else shLm.x()
+        val rawShoulderY = if (leftShVis >= 0.25f && rightShVis >= 0.25f) shoulderMidY else shLm.y()
+
+        // 2. Anatomically Derived C7 (Neck Base) Landmark:
+        // Adjust vertically upward from the shoulder line toward the neck base (approx 20% of shoulder-to-ear height)
+        val (c7X, c7Y) = deriveC7Landmark(
+            shoulderX = rawShoulderX,
+            shoulderY = rawShoulderY,
+            earX = earLm.x(),
+            earY = earLm.y()
+        )
 
         return computeMetrics(
             earX = earLm.x(),
@@ -121,7 +158,9 @@ object PostureAnalyzer {
             shoulderAlignment = shoulderAlignment,
             hipVisible = hipVisible,
             imageWidth = imageWidth,
-            imageHeight = imageHeight
+            imageHeight = imageHeight,
+            rawShoulderX = rawShoulderX,
+            rawShoulderY = rawShoulderY
         )
     }
 
@@ -143,7 +182,9 @@ object PostureAnalyzer {
         shoulderAlignment: Float = 0f,
         hipVisible: Boolean = false,
         imageWidth: Int = 0,
-        imageHeight: Int = 0
+        imageHeight: Int = 0,
+        rawShoulderX: Float = shX,
+        rawShoulderY: Float = shY
     ): PostureMetrics {
         if (earVis < 0.3f || shVis < 0.3f) {
             val metrics = PostureMetrics(0f, 0f, 0f, false, "Turn sideways — show ear & shoulder")
@@ -160,6 +201,8 @@ object PostureAnalyzer {
         val tragusYPx = earY * h
         val c7XPx = shX * w
         val c7YPx = shY * h
+        val shoulderXPx = rawShoulderX * w
+        val shoulderYPx = rawShoulderY * h
 
         // Image coordinates: Y grows downward (top=0, bottom=h).
         // Upright posture: ear/tragus is HIGHER than C7/shoulder, so tragusY < c7Y.
@@ -193,7 +236,11 @@ object PostureAnalyzer {
                 cvaPixelSpace = 0f,
                 cvaNormalizedSpace = 0f,
                 angleWithVertical = 90f,
-                sideLabel = sideLabel
+                sideLabel = sideLabel,
+                shoulderXNorm = rawShoulderX,
+                shoulderYNorm = rawShoulderY,
+                shoulderXPx = shoulderXPx,
+                shoulderYPx = shoulderYPx
             )
         }
 
@@ -245,9 +292,11 @@ object PostureAnalyzer {
                 TAG,
                 "[$sideLabel] LANDMARK_TELEMETRY: " +
                     "Tragus(norm)=(${"%.3f".format(earX)}, ${"%.3f".format(earY)}), " +
-                    "C7(norm)=(${"%.3f".format(shX)}, ${"%.3f".format(shY)}) | " +
+                    "C7_NeckBase(norm)=(${"%.3f".format(shX)}, ${"%.3f".format(shY)}), " +
+                    "Shoulder(norm)=(${"%.3f".format(rawShoulderX)}, ${"%.3f".format(rawShoulderY)}) | " +
                     "Tragus(px)=(${"%.1f".format(tragusXPx)}, ${"%.1f".format(tragusYPx)}), " +
-                    "C7(px)=(${"%.1f".format(c7XPx)}, ${"%.1f".format(c7YPx)}) | " +
+                    "C7_NeckBase(px)=(${"%.1f".format(c7XPx)}, ${"%.1f".format(c7YPx)}), " +
+                    "Shoulder(px)=(${"%.1f".format(shoulderXPx)}, ${"%.1f".format(shoulderYPx)}) | " +
                     "dxPx=${"%.1f".format(dxPx)}, dyPx=${"%.1f".format(dyPx)} | " +
                     "Frame=${w}x${h} (aspect=${"%.2f".format(w.toFloat() / h)}) | " +
                     "CVA(pixel)=${"%.1f".format(cvaPixel)}°, CVA(norm)=${"%.1f".format(cvaNorm)}°, " +
@@ -275,7 +324,11 @@ object PostureAnalyzer {
             cvaPixelSpace = cvaPixel,
             cvaNormalizedSpace = cvaNorm,
             angleWithVertical = angleWithVertical,
-            sideLabel = sideLabel
+            sideLabel = sideLabel,
+            shoulderXNorm = rawShoulderX,
+            shoulderYNorm = rawShoulderY,
+            shoulderXPx = shoulderXPx,
+            shoulderYPx = shoulderYPx
         )
     }
 }
