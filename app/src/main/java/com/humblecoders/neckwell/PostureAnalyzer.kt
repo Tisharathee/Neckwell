@@ -61,19 +61,16 @@ object PostureAnalyzer {
 
     // Derived C7 (Neck Base) Landmark Constants:
     // In human anatomy, C7 (vertebra prominens) sits at the posterior base of the cervical spine,
-    // directly continuous with the thoracic spine above the shoulder blades.
+    // noticeably above the acromioclavicular line and backward along the neck toward the back.
     // MediaPipe Pose landmarks 11 & 12 locate the outer acromion / glenohumeral joints.
     // Correct estimation:
     // 1. Take the midpoint between left & right shoulder landmarks to locate the coronal spinal axis (not sideways).
-    // 2. Elevate upward toward the head:
-    //    - 10%–15% of torso height (shoulder-midpoint to hip-midpoint), or
-    //    - ~22% of neck length (ear-to-shoulder-midpoint distance) when hips are not visible.
-    // 3. Shift inward/back along the neck (posteriorly toward dorsal spine, away from face):
-    //    - ~12% of neck length.
-    const val DEFAULT_C7_TORSO_UPWARD_RATIO = 0.11f  // 11% of torso height (within 10–15% clinical range)
-    const val DEFAULT_C7_NECK_UPWARD_RATIO = 0.22f   // 22% of ear-to-shoulder vertical distance
-    const val DEFAULT_C7_POSTERIOR_RATIO = 0.12f     // 12% of neck height backward toward dorsal neck
-    const val DEFAULT_C7_VERTICAL_OFFSET_RATIO = 0.22f // Legacy compatibility alias
+    // 2. Elevate upward toward the head by 25%–35% of ear-to-shoulder distance (default 35%).
+    // 3. Shift inward/back along the neck (posteriorly toward dorsal spine, away from face) by ~22% of neck length.
+    const val DEFAULT_C7_NECK_UPWARD_RATIO = 0.35f   // 35% of ear-to-shoulder vertical distance
+    const val DEFAULT_C7_POSTERIOR_RATIO = 0.22f     // 22% of neck height backward toward dorsal neck
+    const val DEFAULT_C7_TORSO_UPWARD_RATIO = 0.14f  // 14% of torso height (within 10–15% range)
+    const val DEFAULT_C7_VERTICAL_OFFSET_RATIO = 0.35f // Legacy compatibility alias
 
     var c7TorsoUpwardRatio: Float = DEFAULT_C7_TORSO_UPWARD_RATIO
     var c7NeckUpwardRatio: Float = DEFAULT_C7_NECK_UPWARD_RATIO
@@ -82,8 +79,9 @@ object PostureAnalyzer {
 
     /**
      * Primary anatomical C7 estimator:
-     * Takes the shoulder midpoint and moves upward toward the head (10–15% torso or ~22% neck)
-     * and backward along the neck toward the dorsal spine (away from the face).
+     * Takes the shoulder midpoint and scales proportionally by ear-to-shoulder distance:
+     * moves upward toward the head (35% of ear-to-shoulder distance)
+     * and backward along the neck toward the dorsal spine (22% of ear-to-shoulder distance away from the face).
      */
     fun deriveC7Landmark(
         shoulderMidX: Float,
@@ -96,19 +94,14 @@ object PostureAnalyzer {
         neckUpwardRatio: Float = c7NeckUpwardRatio,
         posteriorRatio: Float = c7PosteriorRatio
     ): Pair<Float, Float> {
-        val neckHeight = maxOf(0.01f, shoulderMidY - earY)
-        val dyUp = if (hipMidY != null && (hipMidY - shoulderMidY) > 0.15f) {
-            val torsoHeight = hipMidY - shoulderMidY
-            torsoUpwardRatio * torsoHeight
-        } else {
-            neckUpwardRatio * neckHeight
-        }
+        val earToShoulderDistance = maxOf(0.01f, shoulderMidY - earY)
+        val dyUp = neckUpwardRatio * earToShoulderDistance
         val c7Y = shoulderMidY - dyUp
 
         // If facing Left (nose < ear), gaze is left (-X), so back of neck is right (+X).
         // If facing Right (nose > ear), gaze is right (+X), so back of neck is left (-X).
         val posteriorDirection = if (isFacingLeft) 1f else -1f
-        val dxBack = posteriorRatio * neckHeight
+        val dxBack = posteriorRatio * earToShoulderDistance
         val c7X = shoulderMidX + (posteriorDirection * dxBack)
 
         return Pair(c7X, c7Y)

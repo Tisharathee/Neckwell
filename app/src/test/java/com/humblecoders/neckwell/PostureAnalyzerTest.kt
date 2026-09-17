@@ -225,10 +225,10 @@ class PostureAnalyzerTest {
     fun testDeriveC7LandmarkElevationFromShoulder() {
         // Shoulder Midpoint at (0.50, 0.46), Ear at (0.40, 0.26)
         // Vertical distance neckHeight = 0.46 - 0.26 = 0.20
-        // Seated (no hips):
-        // Elevation (22%): dyUp = 0.22 * 0.20 = 0.044 -> C7 Y = 0.46 - 0.044 = 0.416
+        // Scaled proportionally by ear-to-shoulder distance:
+        // Elevation (35%): dyUp = 0.35 * 0.20 = 0.070 -> C7 Y = 0.46 - 0.070 = 0.390
         // Facing left: nose < ear, posterior is +X.
-        // Posterior shift (12%): dxBack = 0.12 * 0.20 = 0.024 -> C7 X = 0.50 + 0.024 = 0.524
+        // Posterior shift (22%): dxBack = 0.22 * 0.20 = 0.044 -> C7 X = 0.50 + 0.044 = 0.544
         val (c7XLeft, c7YLeft) = PostureAnalyzer.deriveC7Landmark(
             shoulderMidX = 0.50f,
             shoulderMidY = 0.46f,
@@ -238,11 +238,11 @@ class PostureAnalyzerTest {
             hipMidY = null
         )
 
-        assertEquals(0.524f, c7XLeft, 0.002f)
-        assertEquals(0.416f, c7YLeft, 0.002f)
+        assertEquals(0.544f, c7XLeft, 0.002f)
+        assertEquals(0.390f, c7YLeft, 0.002f)
 
         // Facing right: ear is at 0.60, shoulder at 0.50
-        // Posterior is -X -> C7 X = 0.50 - 0.024 = 0.476
+        // Posterior is -X -> C7 X = 0.50 - 0.044 = 0.456
         val (c7XRight, c7YRight) = PostureAnalyzer.deriveC7Landmark(
             shoulderMidX = 0.50f,
             shoulderMidY = 0.46f,
@@ -252,29 +252,47 @@ class PostureAnalyzerTest {
             hipMidY = null
         )
 
-        assertEquals(0.476f, c7XRight, 0.002f)
-        assertEquals(0.416f, c7YRight, 0.002f)
+        assertEquals(0.456f, c7XRight, 0.002f)
+        assertEquals(0.390f, c7YRight, 0.002f)
     }
 
     @Test
-    fun testDeriveC7LandmarkWithTorsoHeight() {
-        // Hips at Y = 0.86, Shoulder Midpoint at Y = 0.46
-        // Torso height = 0.86 - 0.46 = 0.40
-        // With 11% torso height elevation (within 10-15% range):
-        // dyUp = 0.11 * 0.40 = 0.044 -> C7 Y = 0.46 - 0.044 = 0.416
-        val (c7X, c7Y) = PostureAnalyzer.deriveC7Landmark(
-            shoulderMidX = 0.50f,
-            shoulderMidY = 0.46f,
-            earX = 0.40f,
-            earY = 0.26f,
-            isFacingLeft = true,
-            hipMidY = 0.86f,
-            torsoUpwardRatio = 0.11f
+    fun testUserReportedCoordinatesMatchExpectedCva() {
+        // User test capture coordinates:
+        // Tragus: (154px, 248px), Shoulder Midpoint: (187px, 348px)
+        // Ear-to-shoulder distance = 348 - 248 = 100px
+        // Previously C7 was at (187px, 328px) with only 20px offset -> dy=80, dx=33 -> CVA=67.6° (~67.2°)
+        // With 35% vertical offset and 22% dorsal offset:
+        // dyUp = 0.35 * 100 = 35px -> C7 Y = 348 - 35 = 313px
+        // dxBack = 0.22 * 100 = 22px -> C7 X = 187 + 22 = 209px
+        // dy = 313 - 248 = 65px. dx = 209 - 154 = 55px.
+        // CVA = atan2(65, 55) * 180 / PI = 49.8°! (Drops directly into the 48°–50° good posture band!)
+        val (c7XNorm, c7YNorm) = PostureAnalyzer.deriveC7Landmark(
+            shoulderMidX = 0.187f,
+            shoulderMidY = 0.348f,
+            earX = 0.154f,
+            earY = 0.248f,
+            isFacingLeft = true
         )
 
-        assertEquals(0.416f, c7Y, 0.002f)
-        assertTrue("C7 must be elevated above shoulder midpoint", c7Y < 0.46f)
-        assertTrue("C7 must be shifted posteriorly toward back of neck", c7X > 0.50f)
+        val metrics = PostureAnalyzer.computeMetrics(
+            earX = 0.154f,
+            earY = 0.248f,
+            earVis = 0.95f,
+            shX = c7XNorm,
+            shY = c7YNorm,
+            shVis = 0.95f,
+            imageWidth = 1000,
+            imageHeight = 1000,
+            rawShoulderX = 0.187f,
+            rawShoulderY = 0.348f
+        )
+
+        assertEquals(49.8f, metrics.cva, 0.5f)
+        assertTrue("Expected CVA to drop into 48°–50° good posture band", metrics.isCorrect)
+        assertEquals("Good", metrics.posture)
+        assertEquals(313f, metrics.c7YPx, 1.0f)
+        assertEquals(209f, metrics.c7XPx, 1.0f)
     }
 
     @Test
@@ -289,8 +307,7 @@ class PostureAnalyzerTest {
             shoulderMidY = shoulderMidY,
             earX = 0.40f,
             earY = 0.26f,
-            isFacingLeft = true,
-            hipMidY = 0.86f
+            isFacingLeft = true
         )
 
         // Must NOT match left shoulder
@@ -308,24 +325,15 @@ class PostureAnalyzerTest {
     @Test
     fun testMultipleBodyProfilesAlignWithClinicalStandards() {
         // Case A: Upright Neutral Posture (Facing Left)
-        // Shoulders at (500px, 460px) and (540px, 460px) -> Midpoint = (520px, 460px)
-        // Ear at (400px, 260px) -> neckHeight = 200px
-        // Hips at (520px, 860px) -> torsoHeight = 400px
         val (c7XNeutral, c7YNeutral) = PostureAnalyzer.deriveC7Landmark(
             shoulderMidX = 0.520f,
             shoulderMidY = 0.460f,
-            earX = 0.400f,
+            earX = 0.450f,
             earY = 0.260f,
-            isFacingLeft = true,
-            hipMidY = 0.860f
+            isFacingLeft = true
         )
-        // In a 1000x1000 frame:
-        // dyUp = 0.11 * 400 = 44px -> c7Y = 416px
-        // dxBack = 0.12 * 200 = 24px -> c7X = 544px
-        // dy = 416 - 260 = 156px. dx = 544 - 400 = 144px.
-        // tan(CVA) = 156 / 144 ≈ 1.0833 -> CVA = atan2(156, 144) ≈ 47.3° (with 10% torso: 48.5°)
         val metricsNeutral = PostureAnalyzer.computeMetrics(
-            earX = 0.400f,
+            earX = 0.450f,
             earY = 0.260f,
             earVis = 0.95f,
             shX = c7XNeutral,
@@ -339,18 +347,16 @@ class PostureAnalyzerTest {
         // Verifies raw shoulder coords are preserved alongside C7
         assertEquals(520f, metricsNeutral.shoulderXPx, 0.1f)
         assertEquals(460f, metricsNeutral.shoulderYPx, 0.1f)
-        assertEquals(544f, metricsNeutral.c7XPx, 1.0f)
-        assertEquals(416f, metricsNeutral.c7YPx, 1.0f)
+        assertTrue("Expected upright neutral posture to have CVA in target band (was ${metricsNeutral.cva})", metricsNeutral.cva in 48.0f..50.0f)
+        assertEquals("Good", metricsNeutral.posture)
 
         // Case B: Forward Head Posture / Slouch (Facing Left)
-        // Ear poked forward horizontally to (310px, 320px)
         val (c7XSlouch, c7YSlouch) = PostureAnalyzer.deriveC7Landmark(
             shoulderMidX = 0.520f,
             shoulderMidY = 0.460f,
             earX = 0.310f,
             earY = 0.320f,
-            isFacingLeft = true,
-            hipMidY = 0.860f
+            isFacingLeft = true
         )
         val metricsSlouch = PostureAnalyzer.computeMetrics(
             earX = 0.310f,

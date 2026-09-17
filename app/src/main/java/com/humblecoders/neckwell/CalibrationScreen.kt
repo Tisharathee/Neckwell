@@ -379,7 +379,7 @@ fun CalibrationScreen(navController: NavController) {
                                     )
                                     if (m.shoulderYPx > m.c7YPx + 2f || Math.abs(m.shoulderXPx - m.c7XPx) > 2f) {
                                         Text(
-                                            "Shoulder Midpoint: (${"%.1f".format(m.shoulderXPx)}, ${"%.1f".format(m.shoulderYPx)}) px  (C7 adjusted upward & back to neck base)",
+                                            "Shoulder Midpoint: (${"%.1f".format(m.shoulderXPx)}, ${"%.1f".format(m.shoulderYPx)}) px  (C7 elevated +${(PostureAnalyzer.c7NeckUpwardRatio * 100).toInt()}% & back +${(PostureAnalyzer.c7PosteriorRatio * 100).toInt()}%)",
                                             color = Color(0xFFFFB74D),
                                             fontSize = 10.sp
                                         )
