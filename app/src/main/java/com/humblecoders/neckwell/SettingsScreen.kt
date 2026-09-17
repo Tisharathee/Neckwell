@@ -77,7 +77,7 @@ fun SettingsScreen(navController: NavController) {
     val context = LocalContext.current
     NeckWellPreferences.init(context)
 
-    // Subscribe to live system listeners (e.g. Battery) on mount, cleanly unsubscribe on unmount
+    // Subscribe to live system listeners (e.g. WiFi) on mount, cleanly unsubscribe on unmount
     DisposableEffect(context) {
         DeviceStatusManager.registerSystemListeners(context)
         onDispose {
@@ -203,11 +203,11 @@ fun SettingsScreen(navController: NavController) {
                 val batteryColor = if (deviceStatus.isLowBattery) com.humblecoders.neckwell.ui.theme.AlertCoral else AccentTealDark
                 SettingsClickableItem(
                     icon = Icons.Outlined.BatteryFull,
-                    title = "Battery status",
+                    title = "NeckWell Device Battery",
                     description = "${deviceStatus.batteryLevel}% charged${if (deviceStatus.isLowBattery) " • Low Battery" else ""}",
                     iconTint = batteryColor
                 ) {
-                    Toast.makeText(context, "Battery: ${deviceStatus.batteryLevel}%", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "NeckWell Device Battery: ${deviceStatus.batteryLevel}%", Toast.LENGTH_SHORT).show()
                 }
             }
 

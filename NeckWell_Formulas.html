@@ -433,12 +433,12 @@
   <h2><span class="section-icon">5</span> System & Battery Telemetry</h2>
 
   <div class="eq-box">
-    <div class="eq-title">5.1 Battery Percentage Clamping</div>
+    <div class="eq-title">5.1 Hardware Device Battery Telemetry Parsing & Clamping</div>
     <div class="eq-math">
-      $$\text{Raw Pct} = \left\lfloor \frac{\text{EXTRA\_LEVEL} \times 100}{\text{EXTRA\_SCALE}} \right\rfloor, \qquad \text{Battery Pct} = \min\Big(100, \; \max(0, \; \text{Raw Pct})\Big)$$
+      $$\text{Raw Pct} = \operatorname{parse}\big(\text{deviceBattery} \lor \text{battery} \lor \text{batteryLevel}\big), \qquad \text{Battery Pct} = \min\Big(100, \; \max(0, \; \text{Raw Pct})\Big)$$
     </div>
     <div class="eq-desc">
-      Extracts raw sticky broadcast levels and clamps to the valid integer range $[0, 100]\%$.
+      Parses real-time hardware telemetry synced directly from the wearable device to Firebase Firestore (<tt>posture_data</tt>, <tt>esp32/status</tt>) and clamps to the valid integer range $[0, 100]\%$.
     </div>
   </div>
 
@@ -448,7 +448,7 @@
       $$\text{isLowBattery} = \mathbb{I}(\text{Battery Pct} < 20)$$
     </div>
     <div class="eq-desc">
-      Triggers warning amber/coral alerts when device battery falls below $20\%$.
+      Triggers warning amber/coral alerts when wearable device battery falls below $20\%$.
     </div>
   </div>
 

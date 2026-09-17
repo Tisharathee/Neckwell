@@ -9,8 +9,42 @@ import java.util.*
 
 data class PostureData(
     val timestamp: Long? = null,
-    val posture: String = ""
+    val posture: String = "",
+    val deviceBattery: Int? = null
 )
+
+/**
+ * Safely extracts and clamps a device battery percentage from a Firestore document map.
+ * Supports hardware telemetry fields:
+ * - deviceBattery, device_battery
+ * - battery, batteryLevel, battery_level
+ * - batteryPercentage, battery_percentage, batteryPct
+ * Handles both numeric values and string representations (e.g., "85%"), clamped between 0 and 100.
+ */
+fun extractBatteryPercentage(data: Map<String, Any?>): Int? {
+    val candidateKeys = listOf(
+        "deviceBattery",
+        "device_battery",
+        "battery",
+        "batteryLevel",
+        "battery_level",
+        "batteryPercentage",
+        "battery_percentage",
+        "batteryPct"
+    )
+    for (key in candidateKeys) {
+        val value = data[key] ?: continue
+        val parsed = when (value) {
+            is Number -> value.toInt()
+            is String -> value.replace("%", "").trim().toIntOrNull()
+            else -> null
+        }
+        if (parsed != null) {
+            return parsed.coerceIn(0, 100)
+        }
+    }
+    return null
+}
 
 /**
  * Pure function to filter posture data for a specific calendar day.
@@ -74,16 +108,27 @@ fun listenToPostureData(
             val allData = snapshot.documents.mapNotNull { doc ->
                 val timestamp = doc.getLong("timestamp")
                 val posture = doc.getString("posture") ?: ""
+                val battery = extractBatteryPercentage(doc.data ?: emptyMap())
                 PostureData(
                     timestamp = timestamp,
-                    posture = posture
+                    posture = posture,
+                    deviceBattery = battery
                 )
             }
 
             val todayData = filterTodayPostureData(allData)
             val latest = allData.maxByOrNull { it.timestamp ?: 0L }
 
-            Log.d("NeckWell", "Live posture_data updated: ${todayData.size} readings today, latest=${latest?.posture}")
+            // Immediately update DeviceStatusManager with the latest reported device battery
+            val latestBatteryReading = allData
+                .sortedByDescending { it.timestamp ?: 0L }
+                .firstOrNull { it.deviceBattery != null }
+            latestBatteryReading?.deviceBattery?.let { batteryLevel ->
+                Log.d("NeckWell", "Live device battery updated from posture_data: $batteryLevel%")
+                DeviceStatusManager.updateBattery(batteryLevel)
+            }
+
+            Log.d("NeckWell", "Live posture_data updated: ${todayData.size} readings today, latest=${latest?.posture}, deviceBattery=${latestBatteryReading?.deviceBattery}")
             onDataUpdated(todayData, latest)
         }
 }
@@ -100,9 +145,11 @@ suspend fun fetchTodayPostureData(): List<PostureData> {
         val allData = snapshot.documents.mapNotNull { doc ->
             val timestamp = doc.getLong("timestamp")
             val posture = doc.getString("posture") ?: ""
+            val battery = extractBatteryPercentage(doc.data ?: emptyMap())
             PostureData(
                 timestamp = timestamp,
-                posture = posture
+                posture = posture,
+                deviceBattery = battery
             )
         }
 
@@ -131,15 +178,18 @@ suspend fun fetchLatestPosture(): PostureData? {
         val allData = snapshot.documents.mapNotNull { doc ->
             val timestamp = doc.getLong("timestamp")
             val posture = doc.getString("posture") ?: ""
-            Log.d("NeckWell", "Latest posture doc: timestamp=$timestamp, posture=$posture")
+            val battery = extractBatteryPercentage(doc.data ?: emptyMap())
+            Log.d("NeckWell", "Latest posture doc: timestamp=$timestamp, posture=$posture, battery=$battery")
             
             PostureData(
                 timestamp = timestamp,
-                posture = posture
+                posture = posture,
+                deviceBattery = battery
             )
         }
         
         val latest = allData.maxByOrNull { it.timestamp ?: 0L }
+        latest?.deviceBattery?.let { DeviceStatusManager.updateBattery(it) }
         Log.d("NeckWell", "Latest posture: $latest")
         return latest
     } catch (e: Exception) {

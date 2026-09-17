@@ -63,6 +63,9 @@ fun CalibrationScreen(navController: NavController) {
     var calibrationTriggered by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var capturedBaseline by remember { mutableStateOf<Baseline?>(null) }
+    var capturedRawCva by remember { mutableFloatStateOf(0f) }
+    var capturedLateralTilt by remember { mutableFloatStateOf(0f) }
+    var capturedImageFile by remember { mutableStateOf<java.io.File?>(null) }
 
     // ESP32 / Firebase sensor state
     var espStatus by remember { mutableStateOf("Idle") }
@@ -151,7 +154,7 @@ fun CalibrationScreen(navController: NavController) {
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (hasCameraPermission) {
             CameraPreviewWithAnalysis(
-                onMetrics = { metrics ->
+                onMetrics = { metrics, frameBitmap ->
                     // Stop updating camera state once calibration has been triggered
                     if (calibrationTriggered) return@CameraPreviewWithAnalysis
 
@@ -175,7 +178,21 @@ fun CalibrationScreen(navController: NavController) {
 
                         if (stableFrames >= REQUIRED_STABLE_FRAMES) {
                             calibrationTriggered = true
+                            capturedRawCva = metrics.cva
+                            capturedLateralTilt = metrics.lateralTilt
                             statusText = "Good posture captured! Waiting for ESP32 to calibrate…"
+
+                            // Save captured frame image and log raw telemetry asynchronously
+                            val bitmapCopy = frameBitmap?.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
+                            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                val savedFile = CalibrationLogger.saveCalibrationCapture(
+                                    context = context,
+                                    bitmap = bitmapCopy,
+                                    rawCva = metrics.cva,
+                                    lateralTilt = metrics.lateralTilt
+                                )
+                                capturedImageFile = savedFile
+                            }
 
                             // Produce immediate beep sound on phone
                             playBeepTone(ToneGenerator.TONE_PROP_BEEP, 300)
@@ -191,7 +208,8 @@ fun CalibrationScreen(navController: NavController) {
                                         "status" to "pending",
                                         "progress" to 0,
                                         "buzzer" to true,
-                                        "beep" to true
+                                        "beep" to true,
+                                        "rawCva" to metrics.cva
                                     )
                                 )
                         }
@@ -225,20 +243,74 @@ fun CalibrationScreen(navController: NavController) {
                     // Camera readings (CVA / Pitch and Lateral Tilt / Roll)
                     if (!calibrationTriggered) {
                         Text(
-                            "CVA (Pitch): ${"%.1f".format(cvaValue)}°",
+                            "Live CVA: ${"%.1f".format(cvaValue)}°  (Raw: ${cvaValue}°)",
                             color = Color.White,
-                            fontSize = 14.sp
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
                         Text(
                             "Lateral Tilt (Roll): ${"%.1f".format(lateralTiltValue)}°",
-                            color = Color.White,
-                            fontSize = 14.sp
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontSize = 13.sp
                         )
                         Text(
                             "Stable: $stableFrames / $REQUIRED_STABLE_FRAMES",
-                            color = Color.White,
-                            fontSize = 14.sp
+                            color = if (stableFrames > 0) Color(0xFF4EE1A0) else Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
                         )
+                        Spacer(Modifier.height(8.dp))
+                    } else if (capturedRawCva > 0f) {
+                        // High-visibility captured CVA result card shown immediately upon capture
+                        Surface(
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                            color = Color(0xFF1B4D3E).copy(alpha = 0.85f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF4EE1A0)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 6.dp)
+                        ) {
+                            Column(Modifier.padding(12.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        "CAPTURED CVA (CAMERA)",
+                                        color = Color(0xFF4EE1A0),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 1.sp
+                                    )
+                                    Text(
+                                        "Raw: ${"%.2f".format(capturedRawCva)}°",
+                                        color = Color.LightGray,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    "CVA: ${"%.1f".format(capturedRawCva)}°",
+                                    color = Color.White,
+                                    fontSize = 32.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                                Text(
+                                    "Lateral Tilt: ${"%.1f".format(capturedLateralTilt)}°  •  Raw Angle: ${capturedRawCva}°",
+                                    color = Color.White.copy(alpha = 0.85f),
+                                    fontSize = 12.sp
+                                )
+                                capturedImageFile?.let { file ->
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        "Logged: ${file.name}",
+                                        color = Color(0xFF4EE1A0).copy(alpha = 0.9f),
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                        }
                         Spacer(Modifier.height(8.dp))
                     }
 
@@ -313,7 +385,7 @@ fun CalibrationScreen(navController: NavController) {
 }
 
 @Composable
-private fun CameraPreviewWithAnalysis(onMetrics: (PostureMetrics?) -> Unit) {
+private fun CameraPreviewWithAnalysis(onMetrics: (PostureMetrics?, android.graphics.Bitmap?) -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val executor = remember { Executors.newSingleThreadExecutor() }
@@ -321,7 +393,7 @@ private fun CameraPreviewWithAnalysis(onMetrics: (PostureMetrics?) -> Unit) {
     val helper = remember {
         PoseLandmarkerHelper(
             context = context,
-            onResult = { result -> onMetrics(PostureAnalyzer.analyze(result)) },
+            onResult = { result, bitmap -> onMetrics(PostureAnalyzer.analyze(result), bitmap) },
             onError = { /* log if needed */ }
         )
     }

@@ -1,16 +1,11 @@
 package com.humblecoders.neckwell
 
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.os.BatteryManager
 import android.util.Log
-import androidx.core.content.ContextCompat
 import com.google.firebase.Firebase
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
@@ -53,9 +48,8 @@ object DeviceStatusManager {
     private var isFirestoreListening = false
     private var firestoreSubscribersCount = 0
 
-    // Live system listener fields
+    // Live system listener fields (WiFi connectivity callback only; battery is hardware-driven via Firebase)
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private var batteryReceiver: BroadcastReceiver? = null
     private var systemSubscribersCount = 0
 
     init {
@@ -147,45 +141,6 @@ object DeviceStatusManager {
         } catch (e: Exception) {
             Log.w(TAG, "Could not start WiFi network listener: ${e.message}")
         }
-
-        try {
-            // 2. Battery Status Listener (BroadcastReceiver - event driven, no polling)
-            val receiver = object : BroadcastReceiver() {
-                override fun onReceive(context: Context?, intent: Intent?) {
-                    if (intent?.action == Intent.ACTION_BATTERY_CHANGED) {
-                        val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-                        val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
-                        if (level >= 0 && scale > 0) {
-                            val pct = (level * 100) / scale
-                            updateBattery(pct)
-                        }
-                    }
-                }
-            }
-
-            val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-            val stickyIntent = ContextCompat.registerReceiver(
-                appContext,
-                receiver,
-                filter,
-                ContextCompat.RECEIVER_EXPORTED
-            )
-
-            // Read sticky intent immediately on mount
-            stickyIntent?.let { intent ->
-                val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-                val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
-                if (level >= 0 && scale > 0) {
-                    val pct = (level * 100) / scale
-                    updateBattery(pct)
-                }
-            }
-
-            batteryReceiver = receiver
-            Log.i(TAG, "Subscribed to live Battery status events")
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not start Battery status listener: ${e.message}")
-        }
     }
 
     private fun checkIsWifiActive(cm: ConnectivityManager): Boolean {
@@ -208,16 +163,6 @@ object DeviceStatusManager {
                 Log.w(TAG, "Error unregistering network callback: ${e.message}")
             }
             networkCallback = null
-        }
-
-        batteryReceiver?.let { br ->
-            try {
-                appContext.unregisterReceiver(br)
-                Log.i(TAG, "Unregistered live Battery status receiver")
-            } catch (e: Exception) {
-                Log.w(TAG, "Error unregistering battery receiver: ${e.message}")
-            }
-            batteryReceiver = null
         }
     }
 
@@ -252,13 +197,8 @@ object DeviceStatusManager {
                             ?: snapshot.getString("wifiState")
                         val wifiState = parseWifiState(rawWifi)
 
-                        val rawBattery = snapshot.getLong("battery")
-                            ?: snapshot.getLong("battery_level")
-                            ?: snapshot.getLong("batteryLevel")
-                            ?: snapshot.getDouble("battery")?.toLong()
-                            ?: snapshot.getDouble("battery_level")?.toLong()
-
-                        val battery = rawBattery?.toInt() ?: _deviceStatus.value.batteryLevel
+                        val dataMap = snapshot.data ?: emptyMap()
+                        val battery = extractBatteryPercentage(dataMap) ?: _deviceStatus.value.batteryLevel
 
                         val timestamp = snapshot.getLong("timestamp") ?: System.currentTimeMillis()
 
@@ -283,10 +223,8 @@ object DeviceStatusManager {
                     if (snapshot == null || !snapshot.exists()) return@addSnapshotListener
 
                     val rawStatus = snapshot.getString("status")
-                    val rawBattery = snapshot.getLong("battery")
-                        ?: snapshot.getLong("battery_level")
-                        ?: snapshot.getDouble("battery")?.toLong()
-                    val battery = rawBattery?.toInt() ?: _deviceStatus.value.batteryLevel
+                    val dataMap = snapshot.data ?: emptyMap()
+                    val battery = extractBatteryPercentage(dataMap) ?: _deviceStatus.value.batteryLevel
 
                     val rawWifi = snapshot.getString("wifi") ?: snapshot.getString("wifi_status")
                     val wifiState = if (rawWifi != null) parseWifiState(rawWifi) else _deviceStatus.value.wifiState

@@ -1,6 +1,7 @@
 package com.humblecoders.neckwell
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 import java.util.Calendar
@@ -147,5 +148,70 @@ class PostureDataAggregationTest {
         assertEquals(50, calculateGoodPosturePercentage(updatedReadings))
         // Alerts remain 2
         assertEquals(2, countAlerts(updatedReadings))
+    }
+
+    @Test
+    fun testExtractBatteryPercentageSupportedFields() {
+        // 1. "deviceBattery" field as Long (common Firestore format)
+        val data1 = mapOf<String, Any?>("deviceBattery" to 78L, "posture" to "Good")
+        assertEquals(78, extractBatteryPercentage(data1))
+
+        // 2. "battery" field as Int
+        val data2 = mapOf<String, Any?>("battery" to 15)
+        assertEquals(15, extractBatteryPercentage(data2))
+
+        // 3. "battery_level" as Double
+        val data3 = mapOf<String, Any?>("battery_level" to 92.5)
+        assertEquals(92, extractBatteryPercentage(data3))
+
+        // 4. "batteryLevel" camelCase
+        val data4 = mapOf<String, Any?>("batteryLevel" to 60L)
+        assertEquals(60, extractBatteryPercentage(data4))
+
+        // 5. String representations with and without percent sign
+        val data5 = mapOf<String, Any?>("deviceBattery" to "85%")
+        assertEquals(85, extractBatteryPercentage(data5))
+
+        val data6 = mapOf<String, Any?>("battery" to " 42 ")
+        assertEquals(42, extractBatteryPercentage(data6))
+
+        // 6. Value clamping: over 100 clamped to 100, negative clamped to 0
+        val dataHigh = mapOf<String, Any?>("deviceBattery" to 150L)
+        assertEquals(100, extractBatteryPercentage(dataHigh))
+
+        val dataLow = mapOf<String, Any?>("deviceBattery" to -10L)
+        assertEquals(0, extractBatteryPercentage(dataLow))
+
+        // 7. No battery field present
+        val dataNone = mapOf<String, Any?>("posture" to "Good", "timestamp" to 1758000000L)
+        assertNull(extractBatteryPercentage(dataNone))
+    }
+
+    @Test
+    fun testLatestBatteryReadingResolution() {
+        val readings = listOf(
+            PostureData(timestamp = 1000L, posture = "Good", deviceBattery = 85),
+            PostureData(timestamp = 2000L, posture = "Good", deviceBattery = 84),
+            PostureData(timestamp = 3000L, posture = "Poor", deviceBattery = null), // Intermediate sync without battery
+            PostureData(timestamp = 4000L, posture = "Excellent", deviceBattery = 79)
+        )
+
+        // Find the most recent reading containing device battery
+        val latestWithBattery = readings
+            .sortedByDescending { it.timestamp ?: 0L }
+            .firstOrNull { it.deviceBattery != null }
+
+        assertNotNull(latestWithBattery)
+        assertEquals(79, latestWithBattery?.deviceBattery)
+        assertEquals(4000L, latestWithBattery?.timestamp)
+
+        // When a new sync arrives from hardware with battery 75%
+        val newSync = readings + PostureData(timestamp = 5000L, posture = "Good", deviceBattery = 75)
+        val updatedLatestWithBattery = newSync
+            .sortedByDescending { it.timestamp ?: 0L }
+            .firstOrNull { it.deviceBattery != null }
+
+        assertEquals(75, updatedLatestWithBattery?.deviceBattery)
+        assertEquals(5000L, updatedLatestWithBattery?.timestamp)
     }
 }

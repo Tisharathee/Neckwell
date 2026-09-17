@@ -1,6 +1,7 @@
 package com.humblecoders.neckwell
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.os.SystemClock
 import androidx.camera.core.ImageProxy
 import com.google.mediapipe.framework.image.BitmapImageBuilder
@@ -11,10 +12,13 @@ import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 
 class PoseLandmarkerHelper(
     context: Context,
-    private val onResult: (PoseLandmarkerResult) -> Unit,
+    private val onResult: (PoseLandmarkerResult, Bitmap?) -> Unit,
     private val onError: (String) -> Unit = {}
 ) {
     private var poseLandmarker: PoseLandmarker? = null
+
+    @Volatile
+    private var currentBitmap: Bitmap? = null
 
     init {
         try {
@@ -28,7 +32,7 @@ class PoseLandmarkerHelper(
                 .setMinPoseDetectionConfidence(0.5f)
                 .setMinPosePresenceConfidence(0.5f)
                 .setMinTrackingConfidence(0.5f)
-                .setResultListener { result, _ -> onResult(result) }
+                .setResultListener { result, _ -> onResult(result, currentBitmap) }
                 .setErrorListener { e -> onError(e.message ?: "Unknown MediaPipe error") }
                 .build()
 
@@ -49,13 +53,17 @@ class PoseLandmarkerHelper(
         } else {
             rawBitmap
         }
+        currentBitmap = bitmap
         val mpImage = BitmapImageBuilder(bitmap).build()
         poseLandmarker?.detectAsync(mpImage, SystemClock.uptimeMillis())
         imageProxy.close()
     }
 
+    fun getLatestFrameBitmap(): Bitmap? = currentBitmap
+
     fun close() {
         poseLandmarker?.close()
         poseLandmarker = null
+        currentBitmap = null
     }
 }
