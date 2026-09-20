@@ -213,6 +213,7 @@ class CvaComputationTest {
         )
 
         assertTrue(record.startsWith("1758092100000,2026-09-17T06:55:00.000Z,48.0412,41.9588,64.8211,"))
-        assertTrue(record.contains("296.8,403.9,375.2,553.1,720,1280,cva_test.jpg,CAPTURED"))
+        assertTrue(record.contains("296.8,403.9,375.2,553.1,"))
+        assertTrue(record.endsWith("720,1280,cva_test.jpg,CAPTURED\n"))
     }
 }

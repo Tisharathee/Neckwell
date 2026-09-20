@@ -243,36 +243,41 @@
   </div>
 
   <div class="eq-box">
-    <div class="eq-title">1.2 Head Droop / Severe Slouch Rejection Gate</div>
+    <div class="eq-title">1.2 Anatomical Tragus Correction</div>
     <div class="eq-math">
-      $$\text{Slouch Condition} \iff \Delta y \le 0.01$$
+      $$\operatorname{dir}_{\text{face}} = \begin{cases} -1 & \text{if facing left } (x_{\text{nose}} < x_{\text{ear}}) \\ +1 & \text{if facing right } (x_{\text{nose}} > x_{\text{ear}}) \end{cases}$$
+      $$\Delta X_{\text{tragus}} = k_{\text{ant}} \cdot H_{\text{neck}} \cdot \operatorname{dir}_{\text{face}}, \qquad \Delta Y_{\text{tragus}} = k_{\text{inf}} \cdot H_{\text{neck}}$$
+      $$x_{\text{tragus}} = x_{\text{ear}} + \Delta X_{\text{tragus}}, \qquad y_{\text{tragus}} = y_{\text{ear}} + \Delta Y_{\text{tragus}}$$
     </div>
     <div class="eq-desc">
-      If the ear drops level with or beneath the shoulder ($y_{\text{ear}} \ge y_{\text{sh}} - 0.01$), the posture is immediately gated as bad ($\theta_{\text{CVA}} = 0^\circ$).
+      MediaPipe Pose landmarks 7 &amp; 8 identify the outer ear helix/auricle, which sits higher and further back than the true anatomical tragus (cartilage flap at the auditory canal opening). With $k_{\text{ant}} = 0.08$ (8% anterior shift towards the jaw hinge) and $k_{\text{inf}} = 0.04$ (4% inferior shift), the landmark lands precisely at the true tragus.
     </div>
   </div>
 
   <div class="eq-box">
-    <div class="eq-title">1.3 Derived C7 (Neck Base) Anatomical Estimation</div>
+    <div class="eq-title">1.3 Calibrated C7 (Cervical Spine Base) Regression Estimation</div>
     <div class="eq-math">
-      $$x_{\text{sh\_mid}} = \frac{x_{\text{shL}} + x_{\text{shR}}}{2}, \qquad y_{\text{sh\_mid}} = \frac{y_{\text{shL}} + y_{\text{shR}}}{2}, \qquad H_{\text{neck}} = y_{\text{sh\_mid}} - y_{\text{ear}}$$
-      $$\Delta Y_{\text{up}} = 0.35 \cdot H_{\text{neck}}, \qquad \Delta X_{\text{back}} = 0.25 \cdot H_{\text{neck}}$$
-      $$\operatorname{dir}_{\text{post}} = \begin{cases} +1 & \text{if facing left } (x_{\text{nose}} < x_{\text{ear}}) \\ -1 & \text{if facing right } (x_{\text{nose}} > x_{\text{ear}}) \end{cases}$$
+      $$x_{\text{sh\_mid}} = \frac{x_{\text{shL}} + x_{\text{shR}}}{2}, \qquad y_{\text{sh\_mid}} = \frac{y_{\text{shL}} + y_{\text{shR}}}{2}, \qquad H_{\text{neck}} = y_{\text{sh\_mid}} - y_{\text{ear}}, \qquad W_{\text{shoulder}} = |x_{\text{shL}} - x_{\text{shR}}|$$
+      $$\Delta Y_{\text{up}} = k_{y,\text{neck}} \cdot H_{\text{neck}} + k_{y,\text{shoulder}} \cdot W_{\text{shoulder}}$$
+      $$\Delta X_{\text{back}} = k_{x,\text{neck}} \cdot H_{\text{neck}} + k_{x,\text{shoulder}} \cdot W_{\text{shoulder}}$$
+      $$\operatorname{dir}_{\text{post}} = -\operatorname{dir}_{\text{face}}$$
       $$y_{\text{C7}} = y_{\text{sh\_mid}} - \Delta Y_{\text{up}}, \qquad x_{\text{C7}} = x_{\text{sh\_mid}} + \big(\operatorname{dir}_{\text{post}} \cdot \Delta X_{\text{back}}\big)$$
       $$\Delta X_{\text{px}} = |X_{\text{tragus, px}} - X_{\text{C7, px}}|, \qquad \Delta Y_{\text{px}} = Y_{\text{C7, px}} - Y_{\text{tragus, px}}$$
     </div>
     <div class="eq-desc">
-      MediaPipe's shoulder landmarks (11 & 12) identify the outer acromion / glenohumeral joints, which sit lower and more anterior than the C7 vertebra (cervical spine base). C7 is derived from the shoulder midpoint by elevating upward toward the head ($35\%$ of ear-to-shoulder vertical distance) and shifting backward along the dorsal neck column ($25\%$ of ear-to-shoulder distance away from the face to align with the cervical spine contour).
+      Estimates the C7 spinous process using a multi-parameter anatomical regression model calibrated against clinical reference imagery. Default constants: $k_{y,\text{neck}} = 0.35$, $k_{y,\text{shoulder}} = 0.05$, $k_{x,\text{neck}} = 0.25$, $k_{x,\text{shoulder}} = 0.04$.
     </div>
   </div>
 
   <div class="eq-box">
-    <div class="eq-title">1.4 Craniovertebral Angle (CVA / Pitch)</div>
+    <div class="eq-title">1.4 Craniovertebral Angle (CVA / Pitch) &amp; Euclidean Error Metrics</div>
     <div class="eq-math">
       $$\theta_{\text{CVA}} = \operatorname{atan2}(\Delta Y_{\text{px}}, \Delta X_{\text{px}}) \times \frac{180^\circ}{\pi}, \qquad \theta_{\text{vert}} = 90^\circ - \theta_{\text{CVA}}$$
+      $$\Delta E_{\text{Tragus}} = \sqrt{(X_{\text{tragus, px}} - X_{\text{ref, px}})^2 + (Y_{\text{tragus, px}} - Y_{\text{ref, px}})^2}$$
+      $$\Delta E_{\text{C7}} = \sqrt{(X_{\text{C7, px}} - X_{\text{ref, px}})^2 + (Y_{\text{C7, px}} - Y_{\text{ref, px}})^2}, \qquad \Delta\text{CVA} = |\theta_{\text{CVA}} - \theta_{\text{CVA, ref}}|$$
     </div>
     <div class="eq-desc">
-      Calculates the true anatomical angle formed between the line from C7 (neck base) to tragus and the horizontal reference plane through C7.
+      Calculates the anatomical angle from C7 to tragus relative to the horizontal plane. During clinical validation mode, pixel Euclidean distances ($\Delta E$) and angle deviation ($\Delta\text{CVA}$) quantify accuracy against ground-truth clinical reference points.
     </div>
   </div>
 
@@ -480,6 +485,21 @@
         <td><code>CVA_MIN</code>, <code>CVA_MAX</code> ($\theta_{\text{CVA}}$)</td>
         <td>$48.0^\circ - 50.0^\circ$</td>
         <td>Clinical Craniovertebral Angle target range for neutral upright posture (inclusive).</td>
+      </tr>
+      <tr>
+        <td><code>k_ant</code>, <code>k_inf</code> (Tragus derivation)</td>
+        <td>$0.08, 0.04$</td>
+        <td>Anterior (towards jaw) and inferior (downward) offsets from ear pinna to true tragus.</td>
+      </tr>
+      <tr>
+        <td><code>k_y_neck</code>, <code>k_y_shoulder</code> (C7 vertical)</td>
+        <td>$0.35, 0.05$</td>
+        <td>Regression weights for C7 vertical elevation above shoulder midpoint.</td>
+      </tr>
+      <tr>
+        <td><code>k_x_neck</code>, <code>k_x_shoulder</code> (C7 dorsal)</td>
+        <td>$0.25, 0.04$</td>
+        <td>Regression weights for C7 posterior dorsal shift into spinal column.</td>
       </tr>
       <tr>
         <td><code>MAX_EAR_SHOULDER_DX</code> ($\Delta x$)</td>

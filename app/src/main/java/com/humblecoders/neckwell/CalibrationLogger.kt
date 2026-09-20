@@ -14,7 +14,7 @@ import java.util.TimeZone
 
 object CalibrationLogger {
     private const val TAG = "CalibrationValidation"
-    private const val CSV_HEADER = "Timestamp,DateTime,RawCVA_Deg,AngleWithVertical_Deg,CVA_Normalized_Deg,TragusX_Norm,TragusY_Norm,C7X_Norm,C7Y_Norm,TragusX_Px,TragusY_Px,C7X_Px,C7Y_Px,ImageWidth,ImageHeight,ImageFilename,Status\n"
+    private const val CSV_HEADER = "Timestamp,DateTime,RawCVA_Deg,AngleWithVertical_Deg,CVA_Normalized_Deg,TragusX_Norm,TragusY_Norm,C7X_Norm,C7Y_Norm,TragusX_Px,TragusY_Px,C7X_Px,C7Y_Px,RawEarX_Px,RawEarY_Px,RefTragusX_Px,RefTragusY_Px,TragusError_Px,RefC7X_Px,RefC7Y_Px,C7Error_Px,ImageWidth,ImageHeight,ImageFilename,Status\n"
 
     /**
      * Formats a comprehensive CSV record line with raw landmark coordinates for clinical comparison.
@@ -33,11 +33,22 @@ object CalibrationLogger {
         tragusYPx: Float,
         c7XPx: Float,
         c7YPx: Float,
+        rawEarXPx: Float = tragusXPx,
+        rawEarYPx: Float = tragusYPx,
+        refTragusXPx: Float? = null,
+        refTragusYPx: Float? = null,
+        tragusErrorPx: Float? = null,
+        refC7XPx: Float? = null,
+        refC7YPx: Float? = null,
+        c7ErrorPx: Float? = null,
         imageWidth: Int,
         imageHeight: Int,
         imageFilename: String,
         status: String = "CAPTURED"
     ): String {
+        val refTStr = if (refTragusXPx != null && refTragusYPx != null) "${"%.1f".format(Locale.US, refTragusXPx)},${"%.1f".format(Locale.US, refTragusYPx)},${"%.1f".format(Locale.US, tragusErrorPx ?: 0f)}" else "-,-,-"
+        val refCStr = if (refC7XPx != null && refC7YPx != null) "${"%.1f".format(Locale.US, refC7XPx)},${"%.1f".format(Locale.US, refC7YPx)},${"%.1f".format(Locale.US, c7ErrorPx ?: 0f)}" else "-,-,-"
+
         return "$timestamp,$isoDate," +
             "${"%.4f".format(Locale.US, rawCva)}," +
             "${"%.4f".format(Locale.US, angleWithVertical)}," +
@@ -50,6 +61,9 @@ object CalibrationLogger {
             "${"%.1f".format(Locale.US, tragusYPx)}," +
             "${"%.1f".format(Locale.US, c7XPx)}," +
             "${"%.1f".format(Locale.US, c7YPx)}," +
+            "${"%.1f".format(Locale.US, rawEarXPx)}," +
+            "${"%.1f".format(Locale.US, rawEarYPx)}," +
+            "$refTStr,$refCStr," +
             "$imageWidth,$imageHeight,$imageFilename,$status\n"
     }
 
@@ -99,12 +113,15 @@ object CalibrationLogger {
         context: Context,
         bitmap: Bitmap?,
         metrics: PostureMetrics,
-        timestamp: Long = System.currentTimeMillis()
+        timestamp: Long = System.currentTimeMillis(),
+        clinicalRef: ClinicalReference? = null
     ): File? {
         val dir = getCapturesDirectory(context)
         val cvaFormatted = String.format(Locale.US, "%.2f", metrics.cva)
         val filename = "cva_${timestamp}_${cvaFormatted}deg.jpg"
         val imageFile = File(dir, filename)
+
+        val errorMetrics = clinicalRef?.let { PostureAnalyzer.computeLandmarkErrors(metrics, it) }
 
         // 1. Draw Visual Debug Overlay onto Captured Image Bitmap
         if (bitmap != null) {
@@ -120,6 +137,8 @@ object CalibrationLogger {
                 val cY = metrics.c7YNorm * imgH
                 val sX = metrics.shoulderXNorm * imgW
                 val sY = metrics.shoulderYNorm * imgH
+                val rawEX = metrics.rawEarXNorm * imgW
+                val rawEY = metrics.rawEarYNorm * imgH
 
                 val paintCircle = android.graphics.Paint().apply {
                     isAntiAlias = true
@@ -161,10 +180,22 @@ object CalibrationLogger {
                     canvas.drawLine(sX, sY, cX, cY, paintShoulderOffset)
                 }
 
-                // C. C7 to Tragus vector line
+                // C. Raw Ear -> Derived Tragus correction vector
+                if (Math.abs(rawEX - tX) > 2f || Math.abs(rawEY - tY) > 2f) {
+                    val paintEarCorrection = android.graphics.Paint().apply {
+                        isAntiAlias = true
+                        style = android.graphics.Paint.Style.STROKE
+                        strokeWidth = maxOf(2f, imgW / 300f)
+                        color = android.graphics.Color.CYAN
+                        pathEffect = android.graphics.DashPathEffect(floatArrayOf(8f, 6f), 0f)
+                    }
+                    canvas.drawLine(rawEX, rawEY, tX, tY, paintEarCorrection)
+                }
+
+                // D. C7 to Tragus vector line
                 canvas.drawLine(cX, cY, tX, tY, paintLine)
 
-                // D. Shoulder Midpoint (Orange circle)
+                // E. Shoulder Midpoint (Orange circle)
                 val dotRadius = maxOf(10f, imgW / 55f)
                 if (sY > cY + 2f || Math.abs(sX - cX) > 2f) {
                     paintCircle.color = android.graphics.Color.rgb(255, 165, 0)
@@ -173,27 +204,70 @@ object CalibrationLogger {
                     canvas.drawText("Shoulder Midpoint (${"%.1f".format(metrics.shoulderXPx)}, ${"%.1f".format(metrics.shoulderYPx)})", sX + dotRadius + 8f, sY + dotRadius, paintText)
                 }
 
-                // E. Tragus Landmark (Cyan circle)
+                // F. Tragus Landmark (Cyan circle)
                 paintCircle.color = android.graphics.Color.CYAN
                 paintText.color = android.graphics.Color.CYAN
                 canvas.drawCircle(tX, tY, dotRadius, paintCircle)
                 canvas.drawText("Tragus (${"%.1f".format(metrics.tragusXPx)}, ${"%.1f".format(metrics.tragusYPx)})", tX + dotRadius + 8f, tY + dotRadius, paintText)
 
-                // F. C7 / Neck Base Landmark (Yellow circle)
+                // G. C7 / Neck Base Landmark (Yellow circle)
                 paintCircle.color = android.graphics.Color.YELLOW
                 paintText.color = android.graphics.Color.YELLOW
                 canvas.drawCircle(cX, cY, dotRadius, paintCircle)
                 canvas.drawText("C7 Neck Base (${"%.1f".format(metrics.c7XPx)}, ${"%.1f".format(metrics.c7YPx)})", cX + dotRadius + 8f, cY - dotRadius / 2f, paintText)
 
-                // G. Header HUD banner
+                // H. Clinical Reference Overlays (when active)
+                if (clinicalRef != null) {
+                    val refTx = (clinicalRef.tragusXPx / metrics.imageWidth) * imgW
+                    val refTy = (clinicalRef.tragusYPx / metrics.imageHeight) * imgH
+                    val refCx = (clinicalRef.c7XPx / metrics.imageWidth) * imgW
+                    val refCy = (clinicalRef.c7YPx / metrics.imageHeight) * imgH
+
+                    val paintRefLine = android.graphics.Paint().apply {
+                        isAntiAlias = true
+                        style = android.graphics.Paint.Style.STROKE
+                        strokeWidth = maxOf(3f, imgW / 180f)
+                        color = android.graphics.Color.MAGENTA
+                        pathEffect = android.graphics.DashPathEffect(floatArrayOf(14f, 8f), 0f)
+                    }
+                    canvas.drawLine(refCx, refCy, refTx, refTy, paintRefLine)
+
+                    // Error lines
+                    val paintErrLine = android.graphics.Paint().apply {
+                        isAntiAlias = true
+                        style = android.graphics.Paint.Style.STROKE
+                        strokeWidth = 2f
+                        color = android.graphics.Color.MAGENTA
+                        pathEffect = android.graphics.DashPathEffect(floatArrayOf(6f, 6f), 0f)
+                    }
+                    canvas.drawLine(tX, tY, refTx, refTy, paintErrLine)
+                    canvas.drawLine(cX, cY, refCx, refCy, paintErrLine)
+
+                    paintCircle.color = android.graphics.Color.MAGENTA
+                    canvas.drawCircle(refTx, refTy, dotRadius * 0.8f, paintCircle)
+                    paintText.color = android.graphics.Color.MAGENTA
+                    canvas.drawText("Ref Tragus (Δ${"%.1f".format(errorMetrics?.tragusPixelError ?: 0f)}px)", refTx + dotRadius + 6f, refTy + dotRadius, paintText)
+
+                    paintCircle.color = android.graphics.Color.rgb(255, 64, 129)
+                    canvas.drawCircle(refCx, refCy, dotRadius * 0.8f, paintCircle)
+                    paintText.color = android.graphics.Color.rgb(255, 64, 129)
+                    canvas.drawText("Ref C7 (Δ${"%.1f".format(errorMetrics?.c7PixelError ?: 0f)}px)", refCx + dotRadius + 6f, refCy - dotRadius / 2f, paintText)
+                }
+
+                // I. Header HUD banner
                 paintText.color = android.graphics.Color.WHITE
                 val bannerPaint = android.graphics.Paint().apply {
                     color = android.graphics.Color.argb(190, 10, 20, 20)
                     style = android.graphics.Paint.Style.FILL
                 }
                 canvas.drawRect(0f, 0f, imgW, paintText.textSize * 3.8f, bannerPaint)
-                canvas.drawText("CVA: ${"%.1f".format(metrics.cva)}°  |  Target: [${PostureAnalyzer.CVA_MIN.toInt()}°–${PostureAnalyzer.CVA_MAX.toInt()}°]  |  C7 Estimated at Neck Base", 20f, paintText.textSize * 1.3f, paintText)
-                canvas.drawText("Tragus: (${metrics.tragusXPx.toInt()}, ${metrics.tragusYPx.toInt()})  |  C7: (${metrics.c7XPx.toInt()}, ${metrics.c7YPx.toInt()})  |  ShoulderMid: (${metrics.shoulderXPx.toInt()}, ${metrics.shoulderYPx.toInt()})", 20f, paintText.textSize * 2.7f, paintText)
+                canvas.drawText("CVA: ${"%.1f".format(metrics.cva)}°  |  Target: [${PostureAnalyzer.CVA_MIN.toInt()}°–${PostureAnalyzer.CVA_MAX.toInt()}°]  |  Anatomical Tragus & C7", 20f, paintText.textSize * 1.3f, paintText)
+                val bannerLine2 = if (errorMetrics != null) {
+                    "Tragus: (${metrics.tragusXPx.toInt()}, ${metrics.tragusYPx.toInt()}) [Δ${"%.1f".format(errorMetrics.tragusPixelError)}px]  |  C7: (${metrics.c7XPx.toInt()}, ${metrics.c7YPx.toInt()}) [Δ${"%.1f".format(errorMetrics.c7PixelError)}px]"
+                } else {
+                    "Tragus: (${metrics.tragusXPx.toInt()}, ${metrics.tragusYPx.toInt()})  |  C7: (${metrics.c7XPx.toInt()}, ${metrics.c7YPx.toInt()})  |  ShoulderMid: (${metrics.shoulderXPx.toInt()}, ${metrics.shoulderYPx.toInt()})"
+                }
+                canvas.drawText(bannerLine2, 20f, paintText.textSize * 2.7f, paintText)
 
                 FileOutputStream(imageFile).use { out ->
                     annotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
@@ -224,6 +298,14 @@ object CalibrationLogger {
                 tragusYPx = metrics.tragusYPx,
                 c7XPx = metrics.c7XPx,
                 c7YPx = metrics.c7YPx,
+                rawEarXPx = metrics.rawEarXPx,
+                rawEarYPx = metrics.rawEarYPx,
+                refTragusXPx = clinicalRef?.tragusXPx,
+                refTragusYPx = clinicalRef?.tragusYPx,
+                tragusErrorPx = errorMetrics?.tragusPixelError,
+                refC7XPx = clinicalRef?.c7XPx,
+                refC7YPx = clinicalRef?.c7YPx,
+                c7ErrorPx = errorMetrics?.c7PixelError,
                 imageWidth = metrics.imageWidth,
                 imageHeight = metrics.imageHeight,
                 imageFilename = if (imageFile.exists()) imageFile.name else "NONE",

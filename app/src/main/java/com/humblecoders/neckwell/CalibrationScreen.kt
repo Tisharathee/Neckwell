@@ -33,6 +33,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -78,6 +82,39 @@ fun CalibrationScreen(navController: NavController) {
     var liveMetrics by remember { mutableStateOf<PostureMetrics?>(null) }
     var capturedMetrics by remember { mutableStateOf<PostureMetrics?>(null) }
     var showTelemetryDetails by remember { mutableStateOf(false) }
+
+    // Clinical Reference Comparison Mode state
+    var isClinicalRefActive by remember { mutableStateOf(false) }
+    var showClinicalInputs by remember { mutableStateOf(false) }
+    var refTragusXText by remember { mutableStateOf("154.0") }
+    var refTragusYText by remember { mutableStateOf("248.0") }
+    var refC7XText by remember { mutableStateOf("212.0") }
+    var refC7YText by remember { mutableStateOf("313.0") }
+    var refCvaText by remember { mutableStateOf("48.8") }
+
+    val clinicalReference: ClinicalReference? = remember(
+        isClinicalRefActive,
+        refTragusXText,
+        refTragusYText,
+        refC7XText,
+        refC7YText,
+        refCvaText
+    ) {
+        if (!isClinicalRefActive) return@remember null
+        val tX = refTragusXText.toFloatOrNull() ?: return@remember null
+        val tY = refTragusYText.toFloatOrNull() ?: return@remember null
+        val cX = refC7XText.toFloatOrNull() ?: return@remember null
+        val cY = refC7YText.toFloatOrNull() ?: return@remember null
+        val expCva = refCvaText.toFloatOrNull()
+        ClinicalReference(
+            tragusXPx = tX,
+            tragusYPx = tY,
+            c7XPx = cX,
+            c7YPx = cY,
+            expectedCva = expCva,
+            label = "Clinical Software Reference"
+        )
+    }
 
     // ESP32 / Firebase sensor state
     var espStatus by remember { mutableStateOf("Idle") }
@@ -204,7 +241,8 @@ fun CalibrationScreen(navController: NavController) {
                                 val savedFile = CalibrationLogger.saveCalibrationCapture(
                                     context = context,
                                     bitmap = bitmapCopy,
-                                    metrics = metrics
+                                    metrics = metrics,
+                                    clinicalRef = clinicalReference
                                 )
                                 capturedImageFile = savedFile
                             }
@@ -234,7 +272,10 @@ fun CalibrationScreen(navController: NavController) {
 
             // Visual Debug Landmark Overlay (Live or Frozen on Capture)
             val displayMetrics = if (calibrationTriggered) capturedMetrics else liveMetrics
-            PostureLandmarkOverlay(metrics = displayMetrics)
+            PostureLandmarkOverlay(
+                metrics = displayMetrics,
+                clinicalRef = clinicalReference
+            )
 
             // Flash overlay for micro-interaction
             androidx.compose.animation.AnimatedVisibility(
@@ -250,10 +291,15 @@ fun CalibrationScreen(navController: NavController) {
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(horizontal = 16.dp, vertical = 12.dp)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .heightIn(max = 560.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xE6101820))
             ) {
-                Column(Modifier.padding(14.dp)) {
+                Column(
+                    modifier = Modifier
+                        .padding(14.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
 
                     androidx.compose.animation.Crossfade(targetState = statusText) { text ->
                         Text(text, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
@@ -405,6 +451,164 @@ fun CalibrationScreen(navController: NavController) {
                         Spacer(Modifier.height(6.dp))
                     }
 
+                    // Clinical Reference Comparison Section
+                    Spacer(Modifier.height(6.dp))
+                    HorizontalDivider(color = Color(0xFFFF00FF).copy(alpha = 0.4f), thickness = 0.5.dp)
+                    Spacer(Modifier.height(6.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Clinical Comparison: ${if (isClinicalRefActive) "ACTIVE" else "OFF"}",
+                            color = if (isClinicalRefActive) Color(0xFFFF00FF) else Color.LightGray,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row {
+                            TextButton(
+                                onClick = {
+                                    isClinicalRefActive = !isClinicalRefActive
+                                    if (isClinicalRefActive) showClinicalInputs = true
+                                },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(if (isClinicalRefActive) "Disable" else "Enable", fontSize = 11.sp, color = Color(0xFFFF00FF))
+                            }
+                            TextButton(
+                                onClick = { showClinicalInputs = !showClinicalInputs },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(if (showClinicalInputs) "Hide Inputs" else "Set Ref", fontSize = 11.sp, color = Color.White)
+                            }
+                        }
+                    }
+
+                    if (isClinicalRefActive) {
+                        val currentMetrics = displayMetrics
+                        if (currentMetrics != null && clinicalReference != null) {
+                            val errors = PostureAnalyzer.computeLandmarkErrors(currentMetrics, clinicalReference)
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFF24102C).copy(alpha = 0.95f),
+                                border = BorderStroke(1.dp, Color(0xFFFF00FF).copy(alpha = 0.6f)),
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                            ) {
+                                Column(Modifier.padding(10.dp)) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("CLINICAL ERROR EVALUATION", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF00FF))
+                                        Text(
+                                            if (errors.isTragusAccurate && errors.isC7Accurate) "ALIGNED (≤8px) ✓" else "NEEDS CALIBRATION",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (errors.isTragusAccurate && errors.isC7Accurate) Color(0xFF4EE1A0) else Color(0xFFFF6B6B)
+                                        )
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        "Tragus: App (${"%.1f".format(currentMetrics.tragusXPx)}, ${"%.1f".format(currentMetrics.tragusYPx)}) vs Ref (${clinicalReference.tragusXPx.toInt()}, ${clinicalReference.tragusYPx.toInt()})  →  Error: ${"%.1f".format(errors.tragusPixelError)} px",
+                                        fontSize = 10.sp,
+                                        color = if (errors.isTragusAccurate) Color.White else Color(0xFFFF8080)
+                                    )
+                                    Text(
+                                        "C7 Base: App (${"%.1f".format(currentMetrics.c7XPx)}, ${"%.1f".format(currentMetrics.c7YPx)}) vs Ref (${clinicalReference.c7XPx.toInt()}, ${clinicalReference.c7YPx.toInt()})  →  Error: ${"%.1f".format(errors.c7PixelError)} px",
+                                        fontSize = 10.sp,
+                                        color = if (errors.isC7Accurate) Color.White else Color(0xFFFF8080)
+                                    )
+                                    if (clinicalReference.expectedCva != null) {
+                                        Text(
+                                            "CVA: App ${"%.1f".format(currentMetrics.cva)}° vs Ref ${"%.1f".format(clinicalReference.expectedCva)}°  →  ΔCVA: ${"%.1f".format(errors.cvaDelta)}°",
+                                            fontSize = 10.sp,
+                                            color = if (errors.cvaDelta <= 1.5f) Color(0xFF4EE1A0) else Color(0xFFFF8080),
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (showClinicalInputs) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFF14141E).copy(alpha = 0.95f),
+                            border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 4.dp)
+                        ) {
+                            Column(Modifier.padding(8.dp)) {
+                                Text("Reference Coordinates (Clinical Software):", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                Spacer(Modifier.height(4.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                    OutlinedTextField(
+                                        value = refTragusXText,
+                                        onValueChange = { refTragusXText = it; isClinicalRefActive = true },
+                                        label = { Text("Tragus X", fontSize = 9.sp) },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                    )
+                                    OutlinedTextField(
+                                        value = refTragusYText,
+                                        onValueChange = { refTragusYText = it; isClinicalRefActive = true },
+                                        label = { Text("Tragus Y", fontSize = 9.sp) },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                    )
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                    OutlinedTextField(
+                                        value = refC7XText,
+                                        onValueChange = { refC7XText = it; isClinicalRefActive = true },
+                                        label = { Text("C7 X", fontSize = 9.sp) },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                    )
+                                    OutlinedTextField(
+                                        value = refC7YText,
+                                        onValueChange = { refC7YText = it; isClinicalRefActive = true },
+                                        label = { Text("C7 Y", fontSize = 9.sp) },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                    )
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    OutlinedTextField(
+                                        value = refCvaText,
+                                        onValueChange = { refCvaText = it; isClinicalRefActive = true },
+                                        label = { Text("Ref CVA (°)", fontSize = 9.sp) },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Button(
+                                        onClick = {
+                                            refTragusXText = "154.0"
+                                            refTragusYText = "248.0"
+                                            refC7XText = "212.0"
+                                            refC7YText = "313.0"
+                                            refCvaText = "48.8"
+                                            isClinicalRefActive = true
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("Load Preset", fontSize = 9.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // ESP32 sensor section
                     HorizontalDivider(color = Color.Gray.copy(alpha = 0.5f), thickness = 0.5.dp)
                     Spacer(Modifier.height(6.dp))
@@ -482,6 +686,7 @@ fun CalibrationScreen(navController: NavController) {
 @Composable
 private fun PostureLandmarkOverlay(
     metrics: PostureMetrics?,
+    clinicalRef: ClinicalReference? = null,
     modifier: Modifier = Modifier
 ) {
     if (metrics == null || (metrics.tragusXNorm == 0f && metrics.c7XNorm == 0f)) return
@@ -502,6 +707,9 @@ private fun PostureLandmarkOverlay(
         // Front camera image is mirrored horizontally in PreviewView
         val tragusScreenX = offsetX + (1f - metrics.tragusXNorm) * scaledW
         val tragusScreenY = offsetY + metrics.tragusYNorm * scaledH
+
+        val rawEarScreenX = offsetX + (1f - metrics.rawEarXNorm) * scaledW
+        val rawEarScreenY = offsetY + metrics.rawEarYNorm * scaledH
 
         val c7ScreenX = offsetX + (1f - metrics.c7XNorm) * scaledW
         val c7ScreenY = offsetY + metrics.c7YNorm * scaledH
@@ -545,7 +753,29 @@ private fun PostureLandmarkOverlay(
             )
         }
 
-        // 3. Vector line from C7 to Tragus (Mint green)
+        // 3. Raw Ear -> Derived Tragus anatomical correction vector
+        if (Math.abs(rawEarScreenX - tragusScreenX) > 2f || Math.abs(rawEarScreenY - tragusScreenY) > 2f) {
+            val earCorrectionPath = Path().apply {
+                moveTo(rawEarScreenX, rawEarScreenY)
+                lineTo(tragusScreenX, tragusScreenY)
+            }
+            drawPath(
+                path = earCorrectionPath,
+                color = Color.Cyan.copy(alpha = 0.55f),
+                style = Stroke(
+                    width = 1.5.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f)
+                )
+            )
+            drawCircle(
+                color = Color.Cyan.copy(alpha = 0.45f),
+                radius = 4.dp.toPx(),
+                center = Offset(rawEarScreenX, rawEarScreenY),
+                style = Stroke(width = 1.5.dp.toPx())
+            )
+        }
+
+        // 4. Vector line from C7 to Tragus (Mint green)
         drawLine(
             color = Color(0xFF4EE1A0),
             start = Offset(c7ScreenX, c7ScreenY),
@@ -554,7 +784,7 @@ private fun PostureLandmarkOverlay(
             cap = StrokeCap.Round
         )
 
-        // 4. Tragus Landmark (Cyan circle with outer halo)
+        // 5. Tragus Landmark (Cyan circle with outer halo)
         val tragusCenter = Offset(tragusScreenX, tragusScreenY)
         drawCircle(
             color = Color.Cyan.copy(alpha = 0.25f),
@@ -567,7 +797,7 @@ private fun PostureLandmarkOverlay(
             center = tragusCenter
         )
 
-        // 5. C7 / Neck Base Landmark (Yellow circle with outer halo)
+        // 6. C7 / Neck Base Landmark (Yellow circle with outer halo)
         val c7Center = Offset(c7ScreenX, c7ScreenY)
         drawCircle(
             color = Color.Yellow.copy(alpha = 0.25f),
@@ -580,7 +810,81 @@ private fun PostureLandmarkOverlay(
             center = c7Center
         )
 
-        // 6. Draw text annotations directly on Canvas
+        // 7. Clinical Reference Overlays (when active)
+        if (clinicalRef != null) {
+            val refTragusScreenX = offsetX + (1f - (clinicalRef.tragusXPx / imgW)) * scaledW
+            val refTragusScreenY = offsetY + (clinicalRef.tragusYPx / imgH) * scaledH
+            val refC7ScreenX = offsetX + (1f - (clinicalRef.c7XPx / imgW)) * scaledW
+            val refC7ScreenY = offsetY + (clinicalRef.c7YPx / imgH) * scaledH
+
+            // A. Clinical CVA vector line (Magenta dashed)
+            val refCvaPath = Path().apply {
+                moveTo(refC7ScreenX, refC7ScreenY)
+                lineTo(refTragusScreenX, refTragusScreenY)
+            }
+            drawPath(
+                path = refCvaPath,
+                color = Color(0xFFFF00FF).copy(alpha = 0.85f),
+                style = Stroke(
+                    width = 2.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 8f), 0f)
+                )
+            )
+
+            // B. Error line: Computed Tragus -> Clinical Tragus
+            val tragusErrPath = Path().apply {
+                moveTo(tragusScreenX, tragusScreenY)
+                lineTo(refTragusScreenX, refTragusScreenY)
+            }
+            drawPath(
+                path = tragusErrPath,
+                color = Color(0xFFFF00FF),
+                style = Stroke(
+                    width = 2.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
+                )
+            )
+
+            // C. Error line: Computed C7 -> Clinical C7
+            val c7ErrPath = Path().apply {
+                moveTo(c7ScreenX, c7ScreenY)
+                lineTo(refC7ScreenX, refC7ScreenY)
+            }
+            drawPath(
+                path = c7ErrPath,
+                color = Color(0xFFFF5252),
+                style = Stroke(
+                    width = 2.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
+                )
+            )
+
+            // D. Clinical Tragus Marker (Magenta Diamond / Crosshair)
+            drawCircle(
+                color = Color(0xFFFF00FF).copy(alpha = 0.25f),
+                radius = 16.dp.toPx(),
+                center = Offset(refTragusScreenX, refTragusScreenY)
+            )
+            drawCircle(
+                color = Color(0xFFFF00FF),
+                radius = 6.dp.toPx(),
+                center = Offset(refTragusScreenX, refTragusScreenY)
+            )
+
+            // E. Clinical C7 Marker (Coral/Red Diamond / Crosshair)
+            drawCircle(
+                color = Color(0xFFFF5252).copy(alpha = 0.25f),
+                radius = 16.dp.toPx(),
+                center = Offset(refC7ScreenX, refC7ScreenY)
+            )
+            drawCircle(
+                color = Color(0xFFFF5252),
+                radius = 6.dp.toPx(),
+                center = Offset(refC7ScreenX, refC7ScreenY)
+            )
+        }
+
+        // 8. Draw text annotations directly on Canvas
         drawIntoCanvas { canvas ->
             val paint = android.graphics.Paint().apply {
                 isAntiAlias = true
@@ -590,7 +894,7 @@ private fun PostureLandmarkOverlay(
             }
 
             paint.color = android.graphics.Color.CYAN
-            canvas.nativeCanvas.drawText("Tragus (Ear)", tragusScreenX + 24f, tragusScreenY - 8f, paint)
+            canvas.nativeCanvas.drawText("Tragus (Derived)", tragusScreenX + 24f, tragusScreenY - 8f, paint)
 
             paint.color = android.graphics.Color.YELLOW
             canvas.nativeCanvas.drawText("C7 (Neck Base)", c7ScreenX + 24f, c7ScreenY - 8f, paint)
@@ -605,6 +909,21 @@ private fun PostureLandmarkOverlay(
             val midX = (tragusScreenX + c7ScreenX) / 2f
             val midY = (tragusScreenY + c7ScreenY) / 2f
             canvas.nativeCanvas.drawText("CVA: ${"%.1f".format(metrics.cva)}°", midX + 16f, midY - 10f, paint)
+
+            if (clinicalRef != null) {
+                val refTragusScreenX = offsetX + (1f - (clinicalRef.tragusXPx / imgW)) * scaledW
+                val refTragusScreenY = offsetY + (clinicalRef.tragusYPx / imgH) * scaledH
+                val refC7ScreenX = offsetX + (1f - (clinicalRef.c7XPx / imgW)) * scaledW
+                val refC7ScreenY = offsetY + (clinicalRef.c7YPx / imgH) * scaledH
+
+                val errs = PostureAnalyzer.computeLandmarkErrors(metrics, clinicalRef)
+                paint.color = android.graphics.Color.rgb(255, 0, 255)
+                paint.textSize = 11.sp.toPx()
+                canvas.nativeCanvas.drawText("Ref Tragus (Δ${"%.1f".format(errs.tragusPixelError)}px)", refTragusScreenX + 18f, refTragusScreenY + 14f, paint)
+
+                paint.color = android.graphics.Color.rgb(255, 82, 82)
+                canvas.nativeCanvas.drawText("Ref C7 (Δ${"%.1f".format(errs.c7PixelError)}px)", refC7ScreenX + 18f, refC7ScreenY + 14f, paint)
+            }
         }
     }
 }

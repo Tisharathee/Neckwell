@@ -374,4 +374,120 @@ class PostureAnalyzerTest {
         assertEquals("Poor", metricsSlouch.posture)
         assertFalse(metricsSlouch.isCorrect)
     }
+
+    @Test
+    fun testAnatomicalTragusDerivationForwardAndDownwardFromEar() {
+        // Raw ear at (0.40, 0.25), neckHeight = 0.20
+        // Facing Left: anterior is -X (toward face/jaw), inferior is +Y (toward jaw)
+        // With default ratios: dx = 0.08 * 0.20 = 0.016, dy = 0.04 * 0.20 = 0.008
+        val (tragusXLeft, tragusYLeft) = PostureAnalyzer.deriveTragusLandmark(
+            earX = 0.40f,
+            earY = 0.25f,
+            isFacingLeft = true,
+            neckHeight = 0.20f
+        )
+        assertEquals(0.384f, tragusXLeft, 0.001f) // Shifts forward toward face (-X)
+        assertEquals(0.258f, tragusYLeft, 0.001f) // Shifts downward toward jaw (+Y)
+
+        // Facing Right: anterior is +X (toward face/jaw)
+        val (tragusXRight, tragusYRight) = PostureAnalyzer.deriveTragusLandmark(
+            earX = 0.60f,
+            earY = 0.25f,
+            isFacingLeft = false,
+            neckHeight = 0.20f
+        )
+        assertEquals(0.616f, tragusXRight, 0.001f) // Shifts forward toward face (+X)
+        assertEquals(0.258f, tragusYRight, 0.001f) // Shifts downward toward jaw (+Y)
+    }
+
+    @Test
+    fun testCalibratedC7FormulaWithNeckAndShoulderParameters() {
+        // Test C7 regression formula:
+        // dyUp = (kyNeck * neckH) + (kyShoulder * shoulderWidth)
+        // dxBack = (kxNeck * neckH) + (kxShoulder * shoulderWidth)
+        val neckH = 0.20f
+        val shoulderWidth = 0.10f
+        val (c7X, c7Y) = PostureAnalyzer.deriveC7Landmark(
+            shoulderMidX = 0.50f,
+            shoulderMidY = 0.46f,
+            earX = 0.40f,
+            earY = 0.26f,
+            isFacingLeft = true,
+            hipMidY = null,
+            shoulderWidth = shoulderWidth,
+            kyNeck = 0.35f,
+            kyShoulder = 0.05f,
+            kxNeck = 0.25f,
+            kxShoulder = 0.04f
+        )
+
+        // dyUp = (0.35 * 0.20) + (0.05 * 0.10) = 0.070 + 0.005 = 0.075 -> C7 Y = 0.46 - 0.075 = 0.385
+        // dxBack = (0.25 * 0.20) + (0.04 * 0.10) = 0.050 + 0.004 = 0.054 -> C7 X = 0.50 + 0.054 = 0.554
+        assertEquals(0.385f, c7Y, 0.002f)
+        assertEquals(0.554f, c7X, 0.002f)
+    }
+
+    @Test
+    fun testClinicalReferenceEuclideanErrorMetrics() {
+        val testMetrics = PostureMetrics(
+            cva = 48.8f,
+            lateralTilt = 0f,
+            shoulderAlignment = 0f,
+            isCorrect = true,
+            reason = "Test",
+            tragusXPx = 157.0f, // 3px off from 154
+            tragusYPx = 252.0f, // 4px off from 248 -> sqrt(3^2 + 4^2) = 5.0px error
+            c7XPx = 215.0f,     // 3px off from 212
+            c7YPx = 317.0f      // 4px off from 313 -> sqrt(3^2 + 4^2) = 5.0px error
+        )
+
+        val reference = ClinicalReference(
+            tragusXPx = 154.0f,
+            tragusYPx = 248.0f,
+            c7XPx = 212.0f,
+            c7YPx = 313.0f,
+            expectedCva = 48.5f
+        )
+
+        val errors = PostureAnalyzer.computeLandmarkErrors(testMetrics, reference)
+        assertEquals(5.0f, errors.tragusPixelError, 0.01f)
+        assertEquals(5.0f, errors.c7PixelError, 0.01f)
+        assertEquals(0.3f, errors.cvaDelta, 0.01f)
+        assertTrue("Tragus error <= 8px should be considered accurate", errors.isTragusAccurate)
+        assertTrue("C7 error <= 8px should be considered accurate", errors.isC7Accurate)
+    }
+
+    @Test
+    fun testDatasetCalibrationSolver() {
+        val initialKy = PostureAnalyzer.c7KyNeck
+        val initialKx = PostureAnalyzer.c7KxNeck
+
+        // Create a synthetic calibration dataset
+        val samplePoints = listOf(
+            CalibrationDataPoint(
+                rawEarX = 0.154f,
+                rawEarY = 0.248f,
+                rawShoulderX = 0.187f,
+                rawShoulderY = 0.348f,
+                isFacingLeft = true,
+                clinicalTragusX = 0.146f,
+                clinicalTragusY = 0.252f,
+                clinicalC7X = 0.212f,
+                clinicalC7Y = 0.313f
+            )
+        )
+
+        PostureAnalyzer.calibrateFromDataset(samplePoints)
+
+        // Verify calibrated ratios are within reasonable anatomical bounds
+        assertTrue("Calibrated tragus anterior ratio should be within (0.02..0.20)", PostureAnalyzer.tragusAnteriorRatio in 0.02f..0.20f)
+        assertTrue("Calibrated C7 Ky ratio should be within (0.20..0.45)", PostureAnalyzer.c7KyNeck in 0.20f..0.45f)
+        assertTrue("Calibrated C7 Kx ratio should be within (0.15..0.35)", PostureAnalyzer.c7KxNeck in 0.15f..0.35f)
+
+        // Restore defaults
+        PostureAnalyzer.c7KyNeck = initialKy
+        PostureAnalyzer.c7KxNeck = initialKx
+        PostureAnalyzer.tragusAnteriorRatio = PostureAnalyzer.DEFAULT_TRAGUS_ANTERIOR_RATIO
+        PostureAnalyzer.tragusInferiorRatio = PostureAnalyzer.DEFAULT_TRAGUS_INFERIOR_RATIO
+    }
 }

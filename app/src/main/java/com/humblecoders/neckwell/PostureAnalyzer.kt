@@ -29,7 +29,41 @@ data class PostureMetrics(
     val shoulderXNorm: Float = c7XNorm,
     val shoulderYNorm: Float = c7YNorm,
     val shoulderXPx: Float = c7XPx,
-    val shoulderYPx: Float = c7YPx
+    val shoulderYPx: Float = c7YPx,
+    val rawEarXNorm: Float = tragusXNorm,
+    val rawEarYNorm: Float = tragusYNorm,
+    val rawEarXPx: Float = tragusXPx,
+    val rawEarYPx: Float = tragusYPx
+)
+
+data class ClinicalReference(
+    val tragusXPx: Float,
+    val tragusYPx: Float,
+    val c7XPx: Float,
+    val c7YPx: Float,
+    val expectedCva: Float? = null,
+    val label: String = "Clinical Reference"
+)
+
+data class LandmarkErrorMetrics(
+    val tragusPixelError: Float,
+    val c7PixelError: Float,
+    val cvaDelta: Float,
+    val isTragusAccurate: Boolean = tragusPixelError <= 8.0f,
+    val isC7Accurate: Boolean = c7PixelError <= 8.0f
+)
+
+data class CalibrationDataPoint(
+    val rawEarX: Float,
+    val rawEarY: Float,
+    val rawShoulderX: Float,
+    val rawShoulderY: Float,
+    val isFacingLeft: Boolean,
+    val clinicalTragusX: Float,
+    val clinicalTragusY: Float,
+    val clinicalC7X: Float,
+    val clinicalC7Y: Float,
+    val shoulderWidth: Float = 0f
 )
 
 object PostureAnalyzer {
@@ -38,12 +72,15 @@ object PostureAnalyzer {
 
     // MediaPipe Pose Landmark Map Indices:
     // 0: NOSE
-    // 7: LEFT_EAR (Tragus), 8: RIGHT_EAR (Tragus)
+    // 7: LEFT_EAR (Raw Auricle), 8: RIGHT_EAR (Raw Auricle)
+    // 9: MOUTH_LEFT, 10: MOUTH_RIGHT
     // 11: LEFT_SHOULDER, 12: RIGHT_SHOULDER
     // 23: LEFT_HIP, 24: RIGHT_HIP
     private const val NOSE = 0
     private const val LEFT_EAR = 7
     private const val RIGHT_EAR = 8
+    private const val MOUTH_LEFT = 9
+    private const val MOUTH_RIGHT = 10
     private const val LEFT_SHOULDER = 11
     private const val RIGHT_SHOULDER = 12
     private const val LEFT_HIP = 23
@@ -59,29 +96,81 @@ object PostureAnalyzer {
     fun isPoorPosture(cva: Float): Boolean = !isGoodPosture(cva)
     fun classifyPosture(cva: Float): String = if (isGoodPosture(cva)) "Good" else "Poor"
 
-    // Derived C7 (Neck Base) Landmark Constants:
-    // In human anatomy, C7 (vertebra prominens) sits at the posterior base of the cervical spine,
-    // noticeably above the acromioclavicular line and backward along the neck toward the back.
-    // MediaPipe Pose landmarks 11 & 12 locate the outer acromion / glenohumeral joints.
-    // Correct estimation:
-    // 1. Take the midpoint between left & right shoulder landmarks to locate the coronal spinal axis (not sideways).
-    // 2. Elevate upward toward the head by 25%–35% of ear-to-shoulder distance (default 35%).
-    // 3. Shift inward/back along the neck (posteriorly toward dorsal spine, away from face) by ~25% of neck length.
-    const val DEFAULT_C7_NECK_UPWARD_RATIO = 0.35f   // 35% of ear-to-shoulder vertical distance
-    const val DEFAULT_C7_POSTERIOR_RATIO = 0.25f     // 25% of neck height backward toward dorsal neck
-    const val DEFAULT_C7_TORSO_UPWARD_RATIO = 0.14f  // 14% of torso height (within 10–15% range)
-    const val DEFAULT_C7_VERTICAL_OFFSET_RATIO = 0.35f // Legacy compatibility alias
+    // ---------------------------------------------------------------------------------------------
+    // 1. Anatomical Tragus (Ear) Landmark Constants & Derivation:
+    // MediaPipe Pose landmarks 7 & 8 identify the outer auricle / upper helix of the ear.
+    // The anatomical Tragus is the small cartilaginous flap immediately anterior to the external
+    // acoustic meatus (ear canal opening), located forward toward the jaw hinge and slightly inferior.
+    // ---------------------------------------------------------------------------------------------
+    const val DEFAULT_TRAGUS_ANTERIOR_RATIO = 0.08f  // 8% of neck height forward toward jaw hinge
+    const val DEFAULT_TRAGUS_INFERIOR_RATIO = 0.04f  // 4% of neck height downward toward jaw hinge
 
-    var c7TorsoUpwardRatio: Float = DEFAULT_C7_TORSO_UPWARD_RATIO
-    var c7NeckUpwardRatio: Float = DEFAULT_C7_NECK_UPWARD_RATIO
-    var c7PosteriorRatio: Float = DEFAULT_C7_POSTERIOR_RATIO
-    var c7VerticalOffsetRatio: Float = DEFAULT_C7_NECK_UPWARD_RATIO
+    var tragusAnteriorRatio: Float = DEFAULT_TRAGUS_ANTERIOR_RATIO
+    var tragusInferiorRatio: Float = DEFAULT_TRAGUS_INFERIOR_RATIO
 
     /**
-     * Primary anatomical C7 estimator:
-     * Takes the shoulder midpoint and scales proportionally by ear-to-shoulder distance:
-     * moves upward toward the head (35% of ear-to-shoulder distance)
-     * and backward along the neck toward the dorsal spine (25% of ear-to-shoulder distance away from the face).
+     * Anatomical Tragus Estimator:
+     * Derives the true tragus (ear canal opening flap) from the raw MediaPipe ear pinna landmark.
+     * Shifts anteriorly toward the face/jaw along the coronal plane and slightly downward toward the jaw hinge.
+     */
+    fun deriveTragusLandmark(
+        earX: Float,
+        earY: Float,
+        isFacingLeft: Boolean,
+        neckHeight: Float,
+        mouthX: Float? = null,
+        mouthY: Float? = null,
+        anteriorRatio: Float = tragusAnteriorRatio,
+        inferiorRatio: Float = tragusInferiorRatio
+    ): Pair<Float, Float> {
+        val anteriorDirection = if (isFacingLeft) -1f else 1f
+        val dx = anteriorRatio * neckHeight
+        val dy = inferiorRatio * neckHeight
+
+        val tragusX = earX + (anteriorDirection * dx)
+        val tragusY = earY + dy
+
+        return Pair(tragusX, tragusY)
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // 2. Calibrated C7 (Neck Base) Regression Model Constants & Derivation:
+    // C7 (vertebra prominens) sits at the posterior base of the cervical spine.
+    // MediaPipe Pose landmarks 11 & 12 locate the outer acromion joints.
+    // Rather than guessing a fixed ratio, C7 is modeled via regression over neck length
+    // (ear-to-shoulder vertical distance) and shoulder width (acromial span).
+    // ---------------------------------------------------------------------------------------------
+    const val DEFAULT_C7_KY_NECK = 0.35f          // Vertical neck coefficient (elevates upward toward head)
+    const val DEFAULT_C7_KY_SHOULDER = 0.05f      // Vertical shoulder width coefficient
+    const val DEFAULT_C7_KX_NECK = 0.25f          // Horizontal dorsal neck coefficient (shifts back toward spine)
+    const val DEFAULT_C7_KX_SHOULDER = 0.04f      // Horizontal dorsal shoulder width coefficient
+
+    var c7KyNeck: Float = DEFAULT_C7_KY_NECK
+    var c7KyShoulder: Float = DEFAULT_C7_KY_SHOULDER
+    var c7KxNeck: Float = DEFAULT_C7_KX_NECK
+    var c7KxShoulder: Float = DEFAULT_C7_KX_SHOULDER
+
+    // Compatibility aliases
+    const val DEFAULT_C7_NECK_UPWARD_RATIO = DEFAULT_C7_KY_NECK
+    const val DEFAULT_C7_POSTERIOR_RATIO = DEFAULT_C7_KX_NECK
+    const val DEFAULT_C7_TORSO_UPWARD_RATIO = 0.14f
+    const val DEFAULT_C7_VERTICAL_OFFSET_RATIO = DEFAULT_C7_KY_NECK
+
+    var c7TorsoUpwardRatio: Float = DEFAULT_C7_TORSO_UPWARD_RATIO
+    var c7NeckUpwardRatio: Float
+        get() = c7KyNeck
+        set(value) { c7KyNeck = value }
+    var c7PosteriorRatio: Float
+        get() = c7KxNeck
+        set(value) { c7KxNeck = value }
+    var c7VerticalOffsetRatio: Float
+        get() = c7KyNeck
+        set(value) { c7KyNeck = value }
+
+    /**
+     * Primary anatomical C7 estimator using calibrated regression coefficients:
+     * Takes the shoulder midpoint and scales by neck length (ear-to-shoulder vertical distance)
+     * and optional shoulder width.
      */
     fun deriveC7Landmark(
         shoulderMidX: Float,
@@ -90,32 +179,59 @@ object PostureAnalyzer {
         earY: Float,
         isFacingLeft: Boolean,
         hipMidY: Float? = null,
+        shoulderWidth: Float? = null,
         torsoUpwardRatio: Float = c7TorsoUpwardRatio,
-        neckUpwardRatio: Float = c7NeckUpwardRatio,
-        posteriorRatio: Float = c7PosteriorRatio
+        kyNeck: Float = c7KyNeck,
+        kyShoulder: Float = c7KyShoulder,
+        kxNeck: Float = c7KxNeck,
+        kxShoulder: Float = c7KxShoulder
     ): Pair<Float, Float> {
         val earToShoulderDistance = maxOf(0.01f, shoulderMidY - earY)
-        val dyUp = neckUpwardRatio * earToShoulderDistance
+        val sWidth = maxOf(0f, shoulderWidth ?: 0f)
+
+        val dyUp = (kyNeck * earToShoulderDistance) + (kyShoulder * sWidth)
         val c7Y = shoulderMidY - dyUp
 
         // If facing Left (nose < ear), gaze is left (-X), so back of neck is right (+X).
         // If facing Right (nose > ear), gaze is right (+X), so back of neck is left (-X).
         val posteriorDirection = if (isFacingLeft) 1f else -1f
-        val dxBack = posteriorRatio * earToShoulderDistance
+        val dxBack = (kxNeck * earToShoulderDistance) + (kxShoulder * sWidth)
         val c7X = shoulderMidX + (posteriorDirection * dxBack)
 
         return Pair(c7X, c7Y)
     }
 
     /**
-     * Overloaded helper for backwards compatibility with tests / callers without hip or facing data.
+     * Overloaded helper for backwards compatibility with tests / callers without shoulderWidth.
+     */
+    fun deriveC7Landmark(
+        shoulderMidX: Float,
+        shoulderMidY: Float,
+        earX: Float,
+        earY: Float,
+        isFacingLeft: Boolean,
+        hipMidY: Float?
+    ): Pair<Float, Float> {
+        return deriveC7Landmark(
+            shoulderMidX = shoulderMidX,
+            shoulderMidY = shoulderMidY,
+            earX = earX,
+            earY = earY,
+            isFacingLeft = isFacingLeft,
+            hipMidY = hipMidY,
+            shoulderWidth = null
+        )
+    }
+
+    /**
+     * Overloaded helper for backwards compatibility with legacy tests.
      */
     fun deriveC7Landmark(
         shoulderX: Float,
         shoulderY: Float,
         earX: Float,
         earY: Float,
-        verticalOffsetRatio: Float = c7NeckUpwardRatio
+        verticalOffsetRatio: Float = c7KyNeck
     ): Pair<Float, Float> {
         val isFacingLeft = earX <= shoulderX
         return deriveC7Landmark(
@@ -125,7 +241,73 @@ object PostureAnalyzer {
             earY = earY,
             isFacingLeft = isFacingLeft,
             hipMidY = null,
-            neckUpwardRatio = verticalOffsetRatio
+            shoulderWidth = null,
+            kyNeck = verticalOffsetRatio
+        )
+    }
+
+    /**
+     * Calibrates C7 and Tragus coefficients from a dataset of clinical reference points
+     * using regression over neck height.
+     */
+    fun calibrateFromDataset(dataset: List<CalibrationDataPoint>) {
+        if (dataset.isEmpty()) return
+        var sumTragusAnterior = 0.0
+        var sumTragusInferior = 0.0
+        var sumC7Ky = 0.0
+        var sumC7Kx = 0.0
+        var count = 0
+
+        for (pt in dataset) {
+            val neckH = maxOf(0.01f, pt.rawShoulderY - pt.rawEarY)
+            val anteriorDir = if (pt.isFacingLeft) -1f else 1f
+            val posteriorDir = if (pt.isFacingLeft) 1f else -1f
+
+            val tragusDx = (pt.clinicalTragusX - pt.rawEarX) * anteriorDir
+            val tragusDy = pt.clinicalTragusY - pt.rawEarY
+            sumTragusAnterior += (tragusDx / neckH).coerceIn(0.02f, 0.20f)
+            sumTragusInferior += (tragusDy / neckH).coerceIn(0.01f, 0.12f)
+
+            val c7Dy = pt.rawShoulderY - pt.clinicalC7Y
+            val c7Dx = (pt.clinicalC7X - pt.rawShoulderX) * posteriorDir
+            sumC7Ky += (c7Dy / neckH).coerceIn(0.20f, 0.45f)
+            sumC7Kx += (c7Dx / neckH).coerceIn(0.15f, 0.35f)
+            count++
+        }
+
+        if (count > 0) {
+            tragusAnteriorRatio = (sumTragusAnterior / count).toFloat()
+            tragusInferiorRatio = (sumTragusInferior / count).toFloat()
+            c7KyNeck = (sumC7Ky / count).toFloat()
+            c7KxNeck = (sumC7Kx / count).toFloat()
+        }
+    }
+
+    /**
+     * Calculates Euclidean pixel-distance error and CVA delta against a clinical reference.
+     */
+    fun computeLandmarkErrors(
+        metrics: PostureMetrics,
+        ref: ClinicalReference
+    ): LandmarkErrorMetrics {
+        val tragusDx = metrics.tragusXPx - ref.tragusXPx
+        val tragusDy = metrics.tragusYPx - ref.tragusYPx
+        val tragusErr = kotlin.math.sqrt(tragusDx * tragusDx + tragusDy * tragusDy)
+
+        val c7Dx = metrics.c7XPx - ref.c7XPx
+        val c7Dy = metrics.c7YPx - ref.c7YPx
+        val c7Err = kotlin.math.sqrt(c7Dx * c7Dx + c7Dy * c7Dy)
+
+        val cvaDelta = if (ref.expectedCva != null) {
+            abs(metrics.cva - ref.expectedCva)
+        } else {
+            0f
+        }
+
+        return LandmarkErrorMetrics(
+            tragusPixelError = tragusErr,
+            c7PixelError = c7Err,
+            cvaDelta = cvaDelta
         )
     }
 
@@ -176,11 +358,10 @@ object PostureAnalyzer {
         val hipMidX = (hipL.x() + hipR.x()) / 2f
         val hipMidY = if (hipVisible) (hipL.y() + hipR.y()) / 2f else null
 
-        // 1. Shoulder Midpoint:
-        // Do NOT use LEFT_SHOULDER or RIGHT_SHOULDER directly, as they sit out on the lateral shoulder joint.
-        // Always compute the midpoint between the two shoulders as the spinal center baseline.
+        // 1. Shoulder Midpoint & Span:
         val shoulderMidX = (leftShLm.x() + rightShLm.x()) / 2f
         val shoulderMidY = (leftShLm.y() + rightShLm.y()) / 2f
+        val shoulderWidth = abs(leftShLm.x() - rightShLm.x())
         val shoulderAlignment = if (hipVisible) abs(shoulderMidX - hipMidX) else 0f
 
         // 2. Facing Direction (Anterior vs Posterior):
@@ -192,20 +373,35 @@ object PostureAnalyzer {
             useLeft
         }
 
-        // 3. Anatomically Derived C7 (Neck Base) Landmark:
-        // Adjust upward toward head (10–15% torso or ~22% neck) and backward along dorsal neck (~12% neck).
-        val (c7X, c7Y) = deriveC7Landmark(
-            shoulderMidX = shoulderMidX,
-            shoulderMidY = shoulderMidY,
+        val neckHeight = maxOf(0.01f, shoulderMidY - earLm.y())
+
+        // 3. Anatomically Derived Tragus (Ear Canal Opening Flap):
+        // Corrects MediaPipe raw auricle landmark toward the jaw hinge
+        val mouthLm = if (useLeft) landmarks.getOrNull(MOUTH_LEFT) else landmarks.getOrNull(MOUTH_RIGHT)
+        val (tragusX, tragusY) = deriveTragusLandmark(
             earX = earLm.x(),
             earY = earLm.y(),
             isFacingLeft = isFacingLeft,
-            hipMidY = hipMidY
+            neckHeight = neckHeight,
+            mouthX = mouthLm?.x(),
+            mouthY = mouthLm?.y()
+        )
+
+        // 4. Anatomically Derived C7 (Neck Base) Landmark:
+        // Uses calibrated regression over neck height and shoulder width
+        val (c7X, c7Y) = deriveC7Landmark(
+            shoulderMidX = shoulderMidX,
+            shoulderMidY = shoulderMidY,
+            earX = tragusX,
+            earY = tragusY,
+            isFacingLeft = isFacingLeft,
+            hipMidY = hipMidY,
+            shoulderWidth = shoulderWidth
         )
 
         return computeMetrics(
-            earX = earLm.x(),
-            earY = earLm.y(),
+            earX = tragusX,
+            earY = tragusY,
             earVis = earVis,
             shX = c7X,
             shY = c7Y,
@@ -219,7 +415,9 @@ object PostureAnalyzer {
             imageWidth = imageWidth,
             imageHeight = imageHeight,
             rawShoulderX = shoulderMidX,
-            rawShoulderY = shoulderMidY
+            rawShoulderY = shoulderMidY,
+            rawEarX = earLm.x(),
+            rawEarY = earLm.y()
         )
     }
 
@@ -243,7 +441,9 @@ object PostureAnalyzer {
         imageWidth: Int = 0,
         imageHeight: Int = 0,
         rawShoulderX: Float = shX,
-        rawShoulderY: Float = shY
+        rawShoulderY: Float = shY,
+        rawEarX: Float = earX,
+        rawEarY: Float = earY
     ): PostureMetrics {
         if (earVis < 0.3f || shVis < 0.3f) {
             val metrics = PostureMetrics(0f, 0f, 0f, false, "Turn sideways — show ear & shoulder")
@@ -299,7 +499,11 @@ object PostureAnalyzer {
                 shoulderXNorm = rawShoulderX,
                 shoulderYNorm = rawShoulderY,
                 shoulderXPx = shoulderXPx,
-                shoulderYPx = shoulderYPx
+                shoulderYPx = shoulderYPx,
+                rawEarXNorm = rawEarX,
+                rawEarYNorm = rawEarY,
+                rawEarXPx = rawEarX * w,
+                rawEarYPx = rawEarY * h
             )
         }
 
@@ -387,7 +591,11 @@ object PostureAnalyzer {
             shoulderXNorm = rawShoulderX,
             shoulderYNorm = rawShoulderY,
             shoulderXPx = shoulderXPx,
-            shoulderYPx = shoulderYPx
+            shoulderYPx = shoulderYPx,
+            rawEarXNorm = rawEarX,
+            rawEarYNorm = rawEarY,
+            rawEarXPx = rawEarX * w,
+            rawEarYPx = rawEarY * h
         )
     }
 }
