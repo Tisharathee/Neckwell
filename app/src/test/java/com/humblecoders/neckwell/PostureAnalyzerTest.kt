@@ -490,4 +490,249 @@ class PostureAnalyzerTest {
         PostureAnalyzer.tragusAnteriorRatio = PostureAnalyzer.DEFAULT_TRAGUS_ANTERIOR_RATIO
         PostureAnalyzer.tragusInferiorRatio = PostureAnalyzer.DEFAULT_TRAGUS_INFERIOR_RATIO
     }
+
+    @Test
+    fun testMovingAverageLandmarkSmoothingReducesJitter() {
+        val smoother = PostureAnalyzer.LandmarkSmoother(windowSize = 5)
+        val numFrames = 40
+        val baseEarX = 0.154f
+        val baseEarY = 0.248f
+
+        val rawFrames = mutableListOf<PostureAnalyzer.RawLandmarkFrame>()
+        val smoothedFrames = mutableListOf<PostureAnalyzer.SmoothedLandmarkFrame>()
+
+        // Simulate noisy frames with alternating micro-sensor jitter (+- 4 pixels at 1000px = +- 0.004f)
+        for (i in 0 until numFrames) {
+            val noiseX = if (i % 2 == 0) 0.004f else -0.004f
+            val noiseY = if (i % 3 == 0) 0.003f else -0.003f
+            val raw = PostureAnalyzer.RawLandmarkFrame(
+                earX = baseEarX + noiseX,
+                earY = baseEarY + noiseY,
+                leftShX = 0.187f,
+                leftShY = 0.348f,
+                rightShX = 0.220f,
+                rightShY = 0.348f,
+                noseX = 0.120f,
+                noseY = 0.245f,
+                otherEarX = null,
+                otherEarY = null,
+                mouthX = null,
+                mouthY = null,
+                sideLabel = "Left"
+            )
+            rawFrames.add(raw)
+            smoothedFrames.add(smoother.smooth(raw))
+        }
+
+        // Calculate average frame-to-frame jitter in pixels (after 5-frame warmup)
+        var totalRawJitter = 0f
+        var totalSmoothedJitter = 0f
+        var count = 0
+
+        for (i in 6 until numFrames) {
+            val rawDx = (rawFrames[i].earX - rawFrames[i - 1].earX) * 1000f
+            val rawDy = (rawFrames[i].earY - rawFrames[i - 1].earY) * 1000f
+            val rawJitter = kotlin.math.sqrt(rawDx * rawDx + rawDy * rawDy)
+
+            val smDx = (smoothedFrames[i].earX - smoothedFrames[i - 1].earX) * 1000f
+            val smDy = (smoothedFrames[i].earY - smoothedFrames[i - 1].earY) * 1000f
+            val smJitter = kotlin.math.sqrt(smDx * smDx + smDy * smDy)
+
+            totalRawJitter += rawJitter
+            totalSmoothedJitter += smJitter
+            count++
+        }
+
+        val avgRawJitter = totalRawJitter / count
+        val avgSmoothedJitter = totalSmoothedJitter / count
+        val jitterReductionPercent = ((avgRawJitter - avgSmoothedJitter) / avgRawJitter) * 100f
+
+        println("=== Landmark Smoothing Jitter Reduction Benchmark ===")
+        println("Average Raw Jitter: ${"%.2f".format(avgRawJitter)} px")
+        println("Average Smoothed Jitter: ${"%.2f".format(avgSmoothedJitter)} px")
+        println("Jitter Reduction: ${"%.1f".format(jitterReductionPercent)}%")
+
+        assertTrue("Smoothed jitter should be substantially lower than raw jitter", avgSmoothedJitter < avgRawJitter)
+        assertTrue("5-frame moving average should reduce jitter by at least 60%", jitterReductionPercent >= 60f)
+        assertTrue("Smoothed frame-to-frame jitter should stay below 3.0 px", avgSmoothedJitter < 3.0f)
+    }
+
+    @Test
+    fun testContinuous15SecondHoldStability() {
+        val smoother = PostureAnalyzer.LandmarkSmoother(windowSize = 5)
+        val totalFrames = 450 // 15 seconds at 30 fps
+        val cvaValues = mutableListOf<Float>()
+
+        // Upright reference: Tragus ~ (155.5, 248), Shoulder ~ (187, 348)
+        // Derived C7 lands at ~ (212, 313) -> dy = 65, dx = 56.5 -> Base CVA = 49.0° (centered in 48°–50° band)
+        // Add pseudo-random micro-jitter (sensor noise) within +-1.0 px
+        for (frame in 0 until totalFrames) {
+            val noiseDx = (kotlin.math.sin(frame * 0.4) * 0.0006f).toFloat()
+            val noiseDy = (kotlin.math.cos(frame * 0.3) * 0.0006f).toFloat()
+
+            val rawEarX = 0.1555f + noiseDx
+            val rawEarY = 0.2480f + noiseDy
+            val rawShMidX = 0.1870f - noiseDx
+            val rawShMidY = 0.3480f - noiseDy
+
+            val raw = PostureAnalyzer.RawLandmarkFrame(
+                earX = rawEarX,
+                earY = rawEarY,
+                leftShX = rawShMidX - 0.02f,
+                leftShY = rawShMidY,
+                rightShX = rawShMidX + 0.02f,
+                rightShY = rawShMidY,
+                noseX = rawEarX - 0.03f,
+                noseY = rawEarY,
+                otherEarX = null,
+                otherEarY = null,
+                mouthX = null,
+                mouthY = null,
+                sideLabel = "Left"
+            )
+
+            val smoothed = smoother.smooth(raw)
+            val smoothedShMidX = (smoothed.leftShX + smoothed.rightShX) / 2f
+            val smoothedShMidY = (smoothed.leftShY + smoothed.rightShY) / 2f
+
+            val (c7X, c7Y) = PostureAnalyzer.deriveC7Landmark(
+                shoulderMidX = smoothedShMidX,
+                shoulderMidY = smoothedShMidY,
+                earX = smoothed.earX,
+                earY = smoothed.earY,
+                isFacingLeft = true
+            )
+
+            val metrics = PostureAnalyzer.computeMetrics(
+                earX = smoothed.earX,
+                earY = smoothed.earY,
+                earVis = 0.95f,
+                shX = c7X,
+                shY = c7Y,
+                shVis = 0.95f,
+                imageWidth = 1000,
+                imageHeight = 1000,
+                rawShoulderX = smoothedShMidX,
+                rawShoulderY = smoothedShMidY,
+                isSmoothed = true
+            )
+
+            val (_, _, cvaStdDev) = smoother.updateLandmarkJitterAndCva(
+                tragusXPx = metrics.tragusXPx,
+                tragusYPx = metrics.tragusYPx,
+                c7XPx = metrics.c7XPx,
+                c7YPx = metrics.c7YPx,
+                cva = metrics.cva
+            )
+
+            cvaValues.add(metrics.cva)
+
+            // After initial 5-frame warmup, verify strict hold requirements
+            if (frame >= 5) {
+                assertTrue("Frame $frame: CVA (${metrics.cva}°) must be >= 48.0°", metrics.cva >= 48.0f)
+                assertTrue("Frame $frame: CVA (${metrics.cva}°) must be <= 50.0°", metrics.cva <= 50.0f)
+                assertTrue("Frame $frame must be classified as Good posture", metrics.isCorrect)
+                assertEquals("Good", metrics.posture)
+            }
+            // Verify rolling CVA std dev once the 15-frame rolling window is populated (clinical target: <= 0.6°)
+            if (frame >= 15) {
+                assertTrue("Frame $frame: Rolling CVA std dev ($cvaStdDev°) must remain stable (< 0.6°)", cvaStdDev < 0.6f)
+            }
+        }
+
+        val warmCvas = cvaValues.subList(5, totalFrames)
+        val meanCva = warmCvas.average().toFloat()
+        val variance = warmCvas.map { (it - meanCva) * (it - meanCva) }.average()
+        val overallStdDev = kotlin.math.sqrt(variance).toFloat()
+
+        println("=== Continuous 15s Hold (450 Frames) Stability Benchmark ===")
+        println("Mean CVA: ${"%.2f".format(meanCva)}°")
+        println("CVA Range: ${"%.2f".format(warmCvas.minOrNull() ?: 0f)}° – ${"%.2f".format(warmCvas.maxOrNull() ?: 0f)}°")
+        println("Overall Std Dev: ${"%.3f".format(overallStdDev)}°")
+
+        assertTrue("Mean CVA must be inside 48.0°–50.0°", meanCva in 48.0f..50.0f)
+        assertTrue("Overall std dev during 15s hold must be under 0.4°", overallStdDev < 0.4f)
+        // Confirm not artificially clamped to a single identical number
+        val uniqueValues = warmCvas.map { (it * 100).toInt() }.distinct()
+        assertTrue("CVA values should show natural sub-degree variation, not artificial clamping", uniqueValues.size > 1)
+    }
+
+    @Test
+    fun testMultiSubjectGeneralizationAcrossBodyTypes() {
+        data class SubjectProfile(
+            val name: String,
+            val tragusXPx: Float,
+            val tragusYPx: Float,
+            val c7XPx: Float,
+            val c7YPx: Float
+        )
+
+        // 3 Distinct body builds in upright neutral posture:
+        val subjects = listOf(
+            // 1. Average adult build: dy = 65.5px, dx = 57.5px -> atan2(65.5, 57.5) = 48.7°
+            SubjectProfile("Average Build", 154.5f, 248.0f, 212.0f, 313.5f),
+            // 2. Slender / Long-neck build: dy = 69.0px, dx = 60.5px -> atan2(69.0, 60.5) = 48.75°
+            SubjectProfile("Slender / Long Neck", 140.0f, 220.0f, 200.5f, 289.0f),
+            // 3. Stocky / Broad build: dy = 61.0px, dx = 54.0px -> atan2(61.0, 54.0) = 48.48°
+            SubjectProfile("Stocky / Broad Build", 165.0f, 270.0f, 219.0f, 331.0f)
+        )
+
+        println("=== Multi-Subject Anatomical Body Profile Verification ===")
+        for (subj in subjects) {
+            // A. Upright Neutral Posture
+            val uprightMetrics = PostureAnalyzer.computeMetrics(
+                earX = subj.tragusXPx / 1000f,
+                earY = subj.tragusYPx / 1000f,
+                earVis = 0.95f,
+                shX = subj.c7XPx / 1000f,
+                shY = subj.c7YPx / 1000f,
+                shVis = 0.95f,
+                imageWidth = 1000,
+                imageHeight = 1000
+            )
+
+            println("${subj.name} [Upright]: CVA = ${"%.2f".format(uprightMetrics.cva)}° | Posture: ${uprightMetrics.posture}")
+            assertTrue("${subj.name} upright CVA should be >= 48.0°", uprightMetrics.cva >= 48.0f)
+            assertTrue("${subj.name} upright CVA should be <= 50.0°", uprightMetrics.cva <= 50.0f)
+            assertTrue("${subj.name} upright should be classified as Good", uprightMetrics.isCorrect)
+            assertEquals("Good", uprightMetrics.posture)
+
+            // B. Forward Head Slouch (Head pushed forward by +45px)
+            val slouchMetrics = PostureAnalyzer.computeMetrics(
+                earX = (subj.tragusXPx - 45f) / 1000f, // Head pushed left (forward)
+                earY = (subj.tragusYPx + 10f) / 1000f,
+                earVis = 0.95f,
+                shX = subj.c7XPx / 1000f,
+                shY = subj.c7YPx / 1000f,
+                shVis = 0.95f,
+                imageWidth = 1000,
+                imageHeight = 1000
+            )
+
+            println("${subj.name} [Slouch]: CVA = ${"%.2f".format(slouchMetrics.cva)}° | Posture: ${slouchMetrics.posture}")
+            assertTrue("${subj.name} slouch CVA must be < 48.0°", slouchMetrics.cva < 48.0f)
+            assertFalse("${subj.name} slouch must NOT be correct", slouchMetrics.isCorrect)
+            assertEquals("Poor", slouchMetrics.posture)
+            assertTrue(slouchMetrics.reason.contains("head forward"))
+
+            // C. Hyperextended Posture (Head tilted back by -35px)
+            val hyperextendedMetrics = PostureAnalyzer.computeMetrics(
+                earX = (subj.tragusXPx + 35f) / 1000f, // Head tilted back toward spine
+                earY = (subj.tragusYPx - 5f) / 1000f,
+                earVis = 0.95f,
+                shX = subj.c7XPx / 1000f,
+                shY = subj.c7YPx / 1000f,
+                shVis = 0.95f,
+                imageWidth = 1000,
+                imageHeight = 1000
+            )
+
+            println("${subj.name} [Hyperextended]: CVA = ${"%.2f".format(hyperextendedMetrics.cva)}° | Posture: ${hyperextendedMetrics.posture}")
+            assertTrue("${subj.name} hyperextended CVA must be > 50.0°", hyperextendedMetrics.cva > 50.0f)
+            assertFalse("${subj.name} hyperextended must NOT be correct", hyperextendedMetrics.isCorrect)
+            assertEquals("Poor", hyperextendedMetrics.posture)
+            assertTrue(hyperextendedMetrics.reason.contains("head tilted back"))
+        }
+    }
 }
+

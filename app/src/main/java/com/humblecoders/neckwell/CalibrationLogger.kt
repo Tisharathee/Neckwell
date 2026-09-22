@@ -383,4 +383,156 @@ object CalibrationLogger {
         )
         return saveCalibrationCapture(context, bitmap, dummyMetrics, timestamp)
     }
+
+    /**
+     * High-speed continuous frame logger for logcat inspection during live tracking.
+     */
+    fun logLiveTrackingFrame(metrics: PostureMetrics, frameIndex: Long) {
+        Log.i(
+            "CVA_LIVE_FRAME",
+            "LIVE_FRAME #$frameIndex | " +
+                "CVA=${"%.2f".format(Locale.US, metrics.cva)}° (rawInstant=${"%.2f".format(Locale.US, metrics.rawInstantaneousCva)}°, stdDev=±${"%.2f".format(Locale.US, metrics.cvaStdDev)}°) | " +
+                "Tragus=(${"%.1f".format(Locale.US, metrics.tragusXPx)}, ${"%.1f".format(Locale.US, metrics.tragusYPx)}) | " +
+                "C7=(${"%.1f".format(Locale.US, metrics.c7XPx)}, ${"%.1f".format(Locale.US, metrics.c7YPx)}) | " +
+                "jitter=[T:${"%.1f".format(Locale.US, metrics.jitterTragusPx)}px, C7:${"%.1f".format(Locale.US, metrics.jitterC7Px)}px] | " +
+                "Posture=${metrics.posture} (isCorrect=${metrics.isCorrect})"
+        )
+    }
+
+    /**
+     * Session summary data model for continuous live tracking recordings.
+     */
+    data class LiveSessionSummary(
+        val sessionFile: File,
+        val totalFrames: Int,
+        val durationSec: Float,
+        val meanCva: Float,
+        val cvaStdDev: Float,
+        val minCva: Float,
+        val maxCva: Float,
+        val goodPosturePercentage: Float,
+        val avgTragusJitterPx: Float,
+        val avgC7JitterPx: Float
+    )
+
+    /**
+     * Continuous 10–15 second live session CSV recorder.
+     */
+    object LiveSessionRecorder {
+        private const val LIVE_CSV_HEADER = "FrameIndex,Timestamp,ElapsedSec,CVA_Deg,RawInstantCVA_Deg,CVA_StdDev,TragusX_Px,TragusY_Px,C7X_Px,C7Y_Px,JitterTragus_Px,JitterC7_Px,Posture,IsCorrect\n"
+
+        private var activeSessionFile: File? = null
+        private var sessionStartTime: Long = 0L
+        private var frameCount: Int = 0
+        private val cvaList = mutableListOf<Float>()
+        private var goodCount: Int = 0
+        private var sumJitterTragus = 0.0
+        private var sumJitterC7 = 0.0
+        private var isRecordingSession = false
+
+        @Synchronized
+        fun isRecording(): Boolean = isRecordingSession
+
+        @Synchronized
+        fun startSession(context: Context): File {
+            val dir = getCapturesDirectory(context)
+            val timestamp = System.currentTimeMillis()
+            val file = File(dir, "live_session_${timestamp}.csv")
+            FileOutputStream(file, false).use { fos ->
+                fos.write(LIVE_CSV_HEADER.toByteArray())
+                fos.flush()
+            }
+            activeSessionFile = file
+            sessionStartTime = timestamp
+            frameCount = 0
+            cvaList.clear()
+            goodCount = 0
+            sumJitterTragus = 0.0
+            sumJitterC7 = 0.0
+            isRecordingSession = true
+            Log.i(TAG, "Started live tracking session recording: ${file.absolutePath}")
+            return file
+        }
+
+        @Synchronized
+        fun recordFrame(metrics: PostureMetrics) {
+            if (!isRecordingSession) return
+            val file = activeSessionFile ?: return
+            val now = System.currentTimeMillis()
+            val elapsedSec = (now - sessionStartTime) / 1000f
+            frameCount++
+            cvaList.add(metrics.cva)
+            if (metrics.isCorrect) goodCount++
+            sumJitterTragus += metrics.jitterTragusPx
+            sumJitterC7 += metrics.jitterC7Px
+
+            val record = String.format(
+                Locale.US,
+                "%d,%d,%.3f,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%.2f,%.2f,%s,%b\n",
+                frameCount,
+                now,
+                elapsedSec,
+                metrics.cva,
+                metrics.rawInstantaneousCva,
+                metrics.cvaStdDev,
+                metrics.tragusXPx,
+                metrics.tragusYPx,
+                metrics.c7XPx,
+                metrics.c7YPx,
+                metrics.jitterTragusPx,
+                metrics.jitterC7Px,
+                metrics.posture,
+                metrics.isCorrect
+            )
+
+            try {
+                FileOutputStream(file, true).use { fos ->
+                    fos.write(record.toByteArray())
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error writing frame to live session CSV: ${e.message}")
+            }
+        }
+
+        @Synchronized
+        fun stopSession(): LiveSessionSummary? {
+            if (!isRecordingSession) return null
+            isRecordingSession = false
+            val file = activeSessionFile ?: return null
+            val now = System.currentTimeMillis()
+            val duration = maxOf(0.001f, (now - sessionStartTime) / 1000f)
+            val n = frameCount
+            if (n == 0) return null
+
+            val mean = cvaList.average().toFloat()
+            val variance = cvaList.map { (it - mean) * (it - mean) }.average()
+            val stdDev = kotlin.math.sqrt(variance).toFloat()
+            val min = cvaList.minOrNull() ?: 0f
+            val max = cvaList.maxOrNull() ?: 0f
+            val pctGood = (goodCount.toFloat() / n) * 100f
+            val avgJTragus = (sumJitterTragus / n).toFloat()
+            val avgJC7 = (sumJitterC7 / n).toFloat()
+
+            val summary = LiveSessionSummary(
+                sessionFile = file,
+                totalFrames = n,
+                durationSec = duration,
+                meanCva = mean,
+                cvaStdDev = stdDev,
+                minCva = min,
+                maxCva = max,
+                goodPosturePercentage = pctGood,
+                avgTragusJitterPx = avgJTragus,
+                avgC7JitterPx = avgJC7
+            )
+
+            Log.i(
+                TAG,
+                "Stopped live tracking session: frames=$n, duration=${"%.1f".format(duration)}s, " +
+                    "meanCVA=${"%.1f".format(mean)}° ± ${"%.2f".format(stdDev)}°, goodPct=${"%.1f".format(pctGood)}%, " +
+                    "avgJitter=[T:${"%.2f".format(avgJTragus)}px, C7:${"%.2f".format(avgJC7)}px], file=${file.name}"
+            )
+            return summary
+        }
+    }
 }

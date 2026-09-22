@@ -31,6 +31,7 @@ import androidx.navigation.NavController
 import java.util.concurrent.Executors
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.rememberScrollState
@@ -66,6 +67,7 @@ fun CalibrationScreen(navController: NavController) {
 
     LaunchedEffect(Unit) {
         if (!hasCameraPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
+        PostureAnalyzer.loadFromPreferences(context)
     }
 
     // Camera posture detection state
@@ -82,6 +84,37 @@ fun CalibrationScreen(navController: NavController) {
     var liveMetrics by remember { mutableStateOf<PostureMetrics?>(null) }
     var capturedMetrics by remember { mutableStateOf<PostureMetrics?>(null) }
     var showTelemetryDetails by remember { mutableStateOf(false) }
+
+    // Live Session Recording & Goniometer Tuning state
+    var isLiveSessionRecording by remember { mutableStateOf(false) }
+    var liveSessionSecondsLeft by remember { mutableIntStateOf(15) }
+    var liveSessionSummary by remember { mutableStateOf<CalibrationLogger.LiveSessionSummary?>(null) }
+    var showSessionDialog by remember { mutableStateOf(false) }
+    var liveFrameCount by remember { mutableLongStateOf(0L) }
+
+    var showTuningPanel by remember { mutableStateOf(false) }
+    var tunedC7Ky by remember { mutableFloatStateOf(PostureAnalyzer.c7KyNeck) }
+    var tunedC7Kx by remember { mutableFloatStateOf(PostureAnalyzer.c7KxNeck) }
+    var tunedTragusAnt by remember { mutableFloatStateOf(PostureAnalyzer.tragusAnteriorRatio) }
+    var tunedSmoothingWindow by remember { mutableIntStateOf(PostureAnalyzer.smoothingWindowSize) }
+    var tunedSmoothingEnabled by remember { mutableStateOf(PostureAnalyzer.isSmoothingEnabled) }
+
+    LaunchedEffect(isLiveSessionRecording) {
+        if (isLiveSessionRecording) {
+            CalibrationLogger.LiveSessionRecorder.startSession(context)
+            liveSessionSecondsLeft = 15
+            while (liveSessionSecondsLeft > 0 && isLiveSessionRecording) {
+                delay(1000L)
+                liveSessionSecondsLeft--
+            }
+            if (isLiveSessionRecording) {
+                val summary = CalibrationLogger.LiveSessionRecorder.stopSession()
+                isLiveSessionRecording = false
+                liveSessionSummary = summary
+                showSessionDialog = true
+            }
+        }
+    }
 
     // Clinical Reference Comparison Mode state
     var isClinicalRefActive by remember { mutableStateOf(false) }
@@ -208,6 +241,14 @@ fun CalibrationScreen(navController: NavController) {
                     if (calibrationTriggered) return@CameraPreviewWithAnalysis
 
                     liveMetrics = metrics
+                    if (metrics != null) {
+                        liveFrameCount++
+                        CalibrationLogger.logLiveTrackingFrame(metrics, liveFrameCount)
+                        if (isLiveSessionRecording) {
+                            CalibrationLogger.LiveSessionRecorder.recordFrame(metrics)
+                        }
+                    }
+
                     if (metrics == null) {
                         statusText = "Turn sideways — show ear & shoulder"
                         cvaValue = 0f
@@ -348,6 +389,23 @@ fun CalibrationScreen(navController: NavController) {
                                         "Frame: ${lm.imageWidth}x${lm.imageHeight}",
                                         color = Color.Gray,
                                         fontSize = 11.sp
+                                    )
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        "Instant: ${"%.1f".format(lm.rawInstantaneousCva)}° (±${"%.2f".format(lm.cvaStdDev)}°)",
+                                        color = Color(0xFFFFB74D),
+                                        fontSize = 11.sp
+                                    )
+                                    Text(
+                                        "Jitter: T:${"%.1f".format(lm.jitterTragusPx)}px / C7:${"%.1f".format(lm.jitterC7Px)}px",
+                                        color = if (lm.jitterTragusPx <= 2.5f && lm.jitterC7Px <= 2.5f) Color(0xFF4EE1A0) else Color(0xFFFF8A80),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
                                     )
                                 }
                             }
@@ -609,6 +667,199 @@ fun CalibrationScreen(navController: NavController) {
                         }
                     }
 
+                    // Goniometer Live Tools & Session Recording Section
+                    Spacer(Modifier.height(6.dp))
+                    HorizontalDivider(color = Color(0xFF4EE1A0).copy(alpha = 0.4f), thickness = 0.5.dp)
+                    Spacer(Modifier.height(6.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Goniometer Live Tools",
+                            color = Color(0xFF4EE1A0),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row {
+                            TextButton(
+                                onClick = {
+                                    if (isLiveSessionRecording) {
+                                        val summary = CalibrationLogger.LiveSessionRecorder.stopSession()
+                                        isLiveSessionRecording = false
+                                        liveSessionSummary = summary
+                                        if (summary != null) showSessionDialog = true
+                                    } else {
+                                        isLiveSessionRecording = true
+                                    }
+                                },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    if (isLiveSessionRecording) "Stop (${liveSessionSecondsLeft}s)" else "Record 15s",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isLiveSessionRecording) Color(0xFFFF5252) else Color(0xFF4EE1A0)
+                                )
+                            }
+                            TextButton(
+                                onClick = { showTuningPanel = !showTuningPanel },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(if (showTuningPanel) "Hide Tuning" else "Tune Offsets", fontSize = 11.sp, color = Color.White)
+                            }
+                        }
+                    }
+
+                    if (showTuningPanel) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFF0D251E).copy(alpha = 0.95f),
+                            border = BorderStroke(1.dp, Color(0xFF4EE1A0).copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            Column(Modifier.padding(10.dp)) {
+                                Text("ANATOMICAL OFFSET TUNING (Goniometer Calibration)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4EE1A0))
+                                Spacer(Modifier.height(4.dp))
+
+                                // C7 Vertical Upward (ky_neck)
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                    Text("C7 Elevation (ky): ${(tunedC7Ky * 100).toInt()}%", fontSize = 11.sp, color = Color.White)
+                                    Row {
+                                        Button(
+                                            onClick = {
+                                                tunedC7Ky = (tunedC7Ky - 0.01f).coerceIn(0.20f, 0.45f)
+                                                PostureAnalyzer.c7KyNeck = tunedC7Ky
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                            modifier = Modifier.height(26.dp)
+                                        ) { Text("-", fontSize = 12.sp) }
+                                        Spacer(Modifier.width(4.dp))
+                                        Button(
+                                            onClick = {
+                                                tunedC7Ky = (tunedC7Ky + 0.01f).coerceIn(0.20f, 0.45f)
+                                                PostureAnalyzer.c7KyNeck = tunedC7Ky
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                            modifier = Modifier.height(26.dp)
+                                        ) { Text("+", fontSize = 12.sp) }
+                                    }
+                                }
+
+                                // C7 Dorsal Back (kx_neck)
+                                Spacer(Modifier.height(4.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                    Text("C7 Dorsal Back (kx): ${(tunedC7Kx * 100).toInt()}%", fontSize = 11.sp, color = Color.White)
+                                    Row {
+                                        Button(
+                                            onClick = {
+                                                tunedC7Kx = (tunedC7Kx - 0.01f).coerceIn(0.15f, 0.38f)
+                                                PostureAnalyzer.c7KxNeck = tunedC7Kx
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                            modifier = Modifier.height(26.dp)
+                                        ) { Text("-", fontSize = 12.sp) }
+                                        Spacer(Modifier.width(4.dp))
+                                        Button(
+                                            onClick = {
+                                                tunedC7Kx = (tunedC7Kx + 0.01f).coerceIn(0.15f, 0.38f)
+                                                PostureAnalyzer.c7KxNeck = tunedC7Kx
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                            modifier = Modifier.height(26.dp)
+                                        ) { Text("+", fontSize = 12.sp) }
+                                    }
+                                }
+
+                                // Tragus Anterior Shift (k_ant)
+                                Spacer(Modifier.height(4.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Tragus Forward (k_ant): ${(tunedTragusAnt * 1000).toInt() / 10f}%", fontSize = 11.sp, color = Color.White)
+                                    Row {
+                                        Button(
+                                            onClick = {
+                                                tunedTragusAnt = (tunedTragusAnt - 0.005f).coerceIn(0.04f, 0.15f)
+                                                PostureAnalyzer.tragusAnteriorRatio = tunedTragusAnt
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                            modifier = Modifier.height(26.dp)
+                                        ) { Text("-", fontSize = 12.sp) }
+                                        Spacer(Modifier.width(4.dp))
+                                        Button(
+                                            onClick = {
+                                                tunedTragusAnt = (tunedTragusAnt + 0.005f).coerceIn(0.04f, 0.15f)
+                                                PostureAnalyzer.tragusAnteriorRatio = tunedTragusAnt
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                            modifier = Modifier.height(26.dp)
+                                        ) { Text("+", fontSize = 12.sp) }
+                                    }
+                                }
+
+                                // Smoothing Window Size
+                                Spacer(Modifier.height(4.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Smoothing: ${if (tunedSmoothingEnabled) "${tunedSmoothingWindow} frames" else "OFF"}", fontSize = 11.sp, color = Color.White)
+                                    Row {
+                                        listOf(1, 3, 5, 7).forEach { wSize ->
+                                            Button(
+                                                onClick = {
+                                                    if (wSize == 1) {
+                                                        tunedSmoothingEnabled = false
+                                                        PostureAnalyzer.isSmoothingEnabled = false
+                                                    } else {
+                                                        tunedSmoothingEnabled = true
+                                                        tunedSmoothingWindow = wSize
+                                                        PostureAnalyzer.isSmoothingEnabled = true
+                                                        PostureAnalyzer.smoothingWindowSize = wSize
+                                                        PostureAnalyzer.smoother.windowSize = wSize
+                                                    }
+                                                },
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = if ((tunedSmoothingEnabled && tunedSmoothingWindow == wSize) || (!tunedSmoothingEnabled && wSize == 1)) Color(0xFF4EE1A0) else Color.DarkGray
+                                                ),
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                                modifier = Modifier.height(26.dp).padding(horizontal = 2.dp)
+                                            ) {
+                                                Text(if (wSize == 1) "Off" else "${wSize}f", fontSize = 10.sp, color = Color.Black)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Spacer(Modifier.height(6.dp))
+                                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                    Button(
+                                        onClick = {
+                                            PostureAnalyzer.saveToPreferences(context)
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Text("Save Calibration", fontSize = 10.sp)
+                                    }
+                                    Button(
+                                        onClick = {
+                                            PostureAnalyzer.resetToDefaults(context)
+                                            tunedC7Ky = PostureAnalyzer.c7KyNeck
+                                            tunedC7Kx = PostureAnalyzer.c7KxNeck
+                                            tunedTragusAnt = PostureAnalyzer.tragusAnteriorRatio
+                                            tunedSmoothingWindow = PostureAnalyzer.smoothingWindowSize
+                                            tunedSmoothingEnabled = PostureAnalyzer.isSmoothingEnabled
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Text("Reset Defaults", fontSize = 10.sp, color = Color.White)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // ESP32 sensor section
                     HorizontalDivider(color = Color.Gray.copy(alpha = 0.5f), thickness = 0.5.dp)
                     Spacer(Modifier.height(6.dp))
@@ -675,6 +926,34 @@ fun CalibrationScreen(navController: NavController) {
                     Text("Grant Permission")
                 }
             }
+        }
+
+        if (showSessionDialog && liveSessionSummary != null) {
+            val s = liveSessionSummary!!
+            AlertDialog(
+                onDismissRequest = { showSessionDialog = false },
+                title = { Text("15s Live Session Summary", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column {
+                        Text("Total Frames: ${s.totalFrames} (${"%.1f".format(s.durationSec)}s)")
+                        Text(
+                            "Mean CVA: ${"%.2f".format(s.meanCva)}° ± ${"%.2f".format(s.cvaStdDev)}°",
+                            fontWeight = FontWeight.Bold,
+                            color = if (PostureAnalyzer.isGoodPosture(s.meanCva)) Color(0xFF4EE1A0) else Color(0xFFFF6B6B)
+                        )
+                        Text("CVA Range: ${"%.1f".format(s.minCva)}° – ${"%.1f".format(s.maxCva)}°")
+                        Text("Frames in Good Posture (48°–50°): ${"%.1f".format(s.goodPosturePercentage)}%")
+                        Text("Avg Landmark Jitter: Tragus ${"%.2f".format(s.avgTragusJitterPx)}px, C7 ${"%.2f".format(s.avgC7JitterPx)}px")
+                        Spacer(Modifier.height(8.dp))
+                        Text("Saved CSV:\n${s.sessionFile.name}", fontSize = 11.sp, color = Color.Gray)
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = { showSessionDialog = false }) {
+                        Text("Done")
+                    }
+                }
+            )
         }
     }
 }

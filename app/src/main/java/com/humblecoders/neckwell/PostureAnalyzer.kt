@@ -1,5 +1,6 @@
 package com.humblecoders.neckwell
 
+import android.content.Context
 import android.util.Log
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 import kotlin.math.abs
@@ -33,7 +34,12 @@ data class PostureMetrics(
     val rawEarXNorm: Float = tragusXNorm,
     val rawEarYNorm: Float = tragusYNorm,
     val rawEarXPx: Float = tragusXPx,
-    val rawEarYPx: Float = tragusYPx
+    val rawEarYPx: Float = tragusYPx,
+    val jitterTragusPx: Float = 0f,
+    val jitterC7Px: Float = 0f,
+    val cvaStdDev: Float = 0f,
+    val rawInstantaneousCva: Float = cva,
+    val isSmoothed: Boolean = false
 )
 
 data class ClinicalReference(
@@ -166,6 +172,218 @@ object PostureAnalyzer {
     var c7VerticalOffsetRatio: Float
         get() = c7KyNeck
         set(value) { c7KyNeck = value }
+
+    // ---------------------------------------------------------------------------------------------
+    // 3. Temporal Landmark Smoothing Filter & Jitter Metrics:
+    // Moving average filter over raw landmark coordinates across a sliding window of frames (default N=5).
+    // Eliminates micro-jitter and noise-driven angle spikes while maintaining true anatomical responsiveness.
+    // ---------------------------------------------------------------------------------------------
+    const val DEFAULT_SMOOTHING_WINDOW = 5
+    var smoothingWindowSize: Int = DEFAULT_SMOOTHING_WINDOW
+    var isSmoothingEnabled: Boolean = true
+
+    data class RawLandmarkFrame(
+        val earX: Float,
+        val earY: Float,
+        val leftShX: Float,
+        val leftShY: Float,
+        val rightShX: Float,
+        val rightShY: Float,
+        val noseX: Float?,
+        val noseY: Float?,
+        val otherEarX: Float?,
+        val otherEarY: Float?,
+        val mouthX: Float?,
+        val mouthY: Float?,
+        val sideLabel: String
+    )
+
+    data class SmoothedLandmarkFrame(
+        val earX: Float,
+        val earY: Float,
+        val leftShX: Float,
+        val leftShY: Float,
+        val rightShX: Float,
+        val rightShY: Float,
+        val noseX: Float?,
+        val noseY: Float?,
+        val otherEarX: Float?,
+        val otherEarY: Float?,
+        val mouthX: Float?,
+        val mouthY: Float?,
+        val windowCount: Int
+    )
+
+    class LandmarkSmoother(var windowSize: Int = DEFAULT_SMOOTHING_WINDOW) {
+        private val history = ArrayDeque<RawLandmarkFrame>()
+        private val cvaHistory = ArrayDeque<Float>()
+        private var lastTragusXPx: Float? = null
+        private var lastTragusYPx: Float? = null
+        private var lastC7XPx: Float? = null
+        private var lastC7YPx: Float? = null
+        private var lastSideLabel: String? = null
+
+        @Synchronized
+        fun reset() {
+            history.clear()
+            cvaHistory.clear()
+            lastTragusXPx = null
+            lastTragusYPx = null
+            lastC7XPx = null
+            lastC7YPx = null
+            lastSideLabel = null
+        }
+
+        @Synchronized
+        fun smooth(raw: RawLandmarkFrame): SmoothedLandmarkFrame {
+            if (lastSideLabel != null && lastSideLabel != raw.sideLabel) {
+                reset()
+            }
+            lastSideLabel = raw.sideLabel
+
+            history.addLast(raw)
+            val effectiveWindow = maxOf(1, windowSize)
+            while (history.size > effectiveWindow) {
+                history.removeFirst()
+            }
+
+            val n = history.size
+            var sumEarX = 0f; var sumEarY = 0f
+            var sumLeftShX = 0f; var sumLeftShY = 0f
+            var sumRightShX = 0f; var sumRightShY = 0f
+            var sumNoseX = 0f; var sumNoseY = 0f; var noseCount = 0
+            var sumOtherEarX = 0f; var sumOtherEarY = 0f; var otherEarCount = 0
+            var sumMouthX = 0f; var sumMouthY = 0f; var mouthCount = 0
+
+            for (f in history) {
+                sumEarX += f.earX; sumEarY += f.earY
+                sumLeftShX += f.leftShX; sumLeftShY += f.leftShY
+                sumRightShX += f.rightShX; sumRightShY += f.rightShY
+                if (f.noseX != null && f.noseY != null) {
+                    sumNoseX += f.noseX; sumNoseY += f.noseY; noseCount++
+                }
+                if (f.otherEarX != null && f.otherEarY != null) {
+                    sumOtherEarX += f.otherEarX; sumOtherEarY += f.otherEarY; otherEarCount++
+                }
+                if (f.mouthX != null && f.mouthY != null) {
+                    sumMouthX += f.mouthX; sumMouthY += f.mouthY; mouthCount++
+                }
+            }
+
+            return SmoothedLandmarkFrame(
+                earX = sumEarX / n,
+                earY = sumEarY / n,
+                leftShX = sumLeftShX / n,
+                leftShY = sumLeftShY / n,
+                rightShX = sumRightShX / n,
+                rightShY = sumRightShY / n,
+                noseX = if (noseCount > 0) sumNoseX / noseCount else raw.noseX,
+                noseY = if (noseCount > 0) sumNoseY / noseCount else raw.noseY,
+                otherEarX = if (otherEarCount > 0) sumOtherEarX / otherEarCount else raw.otherEarX,
+                otherEarY = if (otherEarCount > 0) sumOtherEarY / otherEarCount else raw.otherEarY,
+                mouthX = if (mouthCount > 0) sumMouthX / mouthCount else raw.mouthX,
+                mouthY = if (mouthCount > 0) sumMouthY / mouthCount else raw.mouthY,
+                windowCount = n
+            )
+        }
+
+        @Synchronized
+        fun updateLandmarkJitterAndCva(
+            tragusXPx: Float,
+            tragusYPx: Float,
+            c7XPx: Float,
+            c7YPx: Float,
+            cva: Float
+        ): Triple<Float, Float, Float> {
+            val jTragus = if (lastTragusXPx != null && lastTragusYPx != null) {
+                val dx = tragusXPx - lastTragusXPx!!
+                val dy = tragusYPx - lastTragusYPx!!
+                kotlin.math.sqrt(dx * dx + dy * dy)
+            } else 0f
+
+            val jC7 = if (lastC7XPx != null && lastC7YPx != null) {
+                val dx = c7XPx - lastC7XPx!!
+                val dy = c7YPx - lastC7YPx!!
+                kotlin.math.sqrt(dx * dx + dy * dy)
+            } else 0f
+
+            lastTragusXPx = tragusXPx
+            lastTragusYPx = tragusYPx
+            lastC7XPx = c7XPx
+            lastC7YPx = c7YPx
+
+            if (cva > 0f) {
+                cvaHistory.addLast(cva)
+                while (cvaHistory.size > 15) {
+                    cvaHistory.removeFirst()
+                }
+            }
+
+            val stdDev = if (cvaHistory.size >= 2) {
+                val mean = cvaHistory.average().toFloat()
+                val variance = cvaHistory.map { (it - mean) * (it - mean) }.average()
+                kotlin.math.sqrt(variance).toFloat()
+            } else 0f
+
+            return Triple(jTragus, jC7, stdDev)
+        }
+    }
+
+    val smoother = LandmarkSmoother(DEFAULT_SMOOTHING_WINDOW)
+
+    fun resetSmoother() {
+        smoother.reset()
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Calibration Persistence & Tuning Helpers (for Goniometer on-device validation):
+    // ---------------------------------------------------------------------------------------------
+    private const val PREFS_NAME = "neckwell_calibration_prefs"
+    private const val KEY_C7_KY_NECK = "c7_ky_neck"
+    private const val KEY_C7_KX_NECK = "c7_kx_neck"
+    private const val KEY_TRAGUS_ANTERIOR = "tragus_anterior_ratio"
+    private const val KEY_SMOOTHING_WINDOW = "smoothing_window_size"
+    private const val KEY_SMOOTHING_ENABLED = "smoothing_enabled"
+
+    fun saveToPreferences(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putFloat(KEY_C7_KY_NECK, c7KyNeck)
+            .putFloat(KEY_C7_KX_NECK, c7KxNeck)
+            .putFloat(KEY_TRAGUS_ANTERIOR, tragusAnteriorRatio)
+            .putInt(KEY_SMOOTHING_WINDOW, smoothingWindowSize)
+            .putBoolean(KEY_SMOOTHING_ENABLED, isSmoothingEnabled)
+            .apply()
+    }
+
+    fun loadFromPreferences(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (prefs.contains(KEY_C7_KY_NECK)) {
+            c7KyNeck = prefs.getFloat(KEY_C7_KY_NECK, DEFAULT_C7_KY_NECK)
+            c7KxNeck = prefs.getFloat(KEY_C7_KX_NECK, DEFAULT_C7_KX_NECK)
+            tragusAnteriorRatio = prefs.getFloat(KEY_TRAGUS_ANTERIOR, DEFAULT_TRAGUS_ANTERIOR_RATIO)
+            smoothingWindowSize = prefs.getInt(KEY_SMOOTHING_WINDOW, DEFAULT_SMOOTHING_WINDOW)
+            isSmoothingEnabled = prefs.getBoolean(KEY_SMOOTHING_ENABLED, true)
+            smoother.windowSize = smoothingWindowSize
+        }
+    }
+
+    fun resetToDefaults(context: Context? = null) {
+        c7KyNeck = DEFAULT_C7_KY_NECK
+        c7KyShoulder = DEFAULT_C7_KY_SHOULDER
+        c7KxNeck = DEFAULT_C7_KX_NECK
+        c7KxShoulder = DEFAULT_C7_KX_SHOULDER
+        tragusAnteriorRatio = DEFAULT_TRAGUS_ANTERIOR_RATIO
+        tragusInferiorRatio = DEFAULT_TRAGUS_INFERIOR_RATIO
+        smoothingWindowSize = DEFAULT_SMOOTHING_WINDOW
+        isSmoothingEnabled = true
+        smoother.windowSize = DEFAULT_SMOOTHING_WINDOW
+        smoother.reset()
+        if (context != null) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().clear().apply()
+        }
+    }
 
     /**
      * Primary anatomical C7 estimator using calibrated regression coefficients:
@@ -322,10 +540,17 @@ object PostureAnalyzer {
     fun analyze(
         result: PoseLandmarkerResult,
         imageWidth: Int = 0,
-        imageHeight: Int = 0
+        imageHeight: Int = 0,
+        enableSmoothing: Boolean = isSmoothingEnabled
     ): PostureMetrics? {
-        val landmarks = result.landmarks().firstOrNull() ?: return null
-        if (landmarks.size < 25) return null
+        val landmarks = result.landmarks().firstOrNull() ?: run {
+            smoother.reset()
+            return null
+        }
+        if (landmarks.size < 25) {
+            smoother.reset()
+            return null
+        }
 
         val leftEarLm = landmarks[LEFT_EAR]
         val rightEarLm = landmarks[RIGHT_EAR]
@@ -342,11 +567,17 @@ object PostureAnalyzer {
         val leftVis = (leftEarVis + leftShVis) / 2f
         val rightVis = (rightEarVis + rightShVis) / 2f
         val useLeft = leftVis >= rightVis
+        val sideLabel = if (useLeft) "Left" else "Right"
 
         val earLm = if (useLeft) leftEarLm else rightEarLm
         val shLm = if (useLeft) leftShLm else rightShLm
         val earVis = earLm.visibility().orElse(0f)
         val shVis = shLm.visibility().orElse(0f)
+
+        if (earVis < 0.3f || shVis < 0.3f) {
+            smoother.reset()
+            return PostureMetrics(0f, 0f, 0f, false, "Turn sideways — show ear & shoulder", sideLabel = sideLabel)
+        }
 
         val otherEarLm = if (useLeft) rightEarLm else leftEarLm
         val otherEarVis = otherEarLm.visibility().orElse(0f)
@@ -358,37 +589,72 @@ object PostureAnalyzer {
         val hipMidX = (hipL.x() + hipR.x()) / 2f
         val hipMidY = if (hipVisible) (hipL.y() + hipR.y()) / 2f else null
 
-        // 1. Shoulder Midpoint & Span:
-        val shoulderMidX = (leftShLm.x() + rightShLm.x()) / 2f
-        val shoulderMidY = (leftShLm.y() + rightShLm.y()) / 2f
-        val shoulderWidth = abs(leftShLm.x() - rightShLm.x())
+        val mouthLm = if (useLeft) landmarks.getOrNull(MOUTH_LEFT) else landmarks.getOrNull(MOUTH_RIGHT)
+
+        val rawFrame = RawLandmarkFrame(
+            earX = earLm.x(),
+            earY = earLm.y(),
+            leftShX = leftShLm.x(),
+            leftShY = leftShLm.y(),
+            rightShX = rightShLm.x(),
+            rightShY = rightShLm.y(),
+            noseX = noseLm?.x(),
+            noseY = noseLm?.y(),
+            otherEarX = otherEarLm.x(),
+            otherEarY = otherEarLm.y(),
+            mouthX = mouthLm?.x(),
+            mouthY = mouthLm?.y(),
+            sideLabel = sideLabel
+        )
+
+        val activeFrame = if (enableSmoothing) {
+            smoother.windowSize = smoothingWindowSize
+            smoother.smooth(rawFrame)
+        } else {
+            SmoothedLandmarkFrame(
+                earX = rawFrame.earX,
+                earY = rawFrame.earY,
+                leftShX = rawFrame.leftShX,
+                leftShY = rawFrame.leftShY,
+                rightShX = rawFrame.rightShX,
+                rightShY = rawFrame.rightShY,
+                noseX = rawFrame.noseX,
+                noseY = rawFrame.noseY,
+                otherEarX = rawFrame.otherEarX,
+                otherEarY = rawFrame.otherEarY,
+                mouthX = rawFrame.mouthX,
+                mouthY = rawFrame.mouthY,
+                windowCount = 1
+            )
+        }
+
+        // 1. Shoulder Midpoint & Span (from active landmarks):
+        val shoulderMidX = (activeFrame.leftShX + activeFrame.rightShX) / 2f
+        val shoulderMidY = (activeFrame.leftShY + activeFrame.rightShY) / 2f
+        val shoulderWidth = abs(activeFrame.leftShX - activeFrame.rightShX)
         val shoulderAlignment = if (hipVisible) abs(shoulderMidX - hipMidX) else 0f
 
         // 2. Facing Direction (Anterior vs Posterior):
-        // Nose is anterior to ear.
         val noseVis = noseLm?.visibility()?.orElse(0f) ?: 0f
-        val isFacingLeft = if (noseLm != null && noseVis >= 0.25f) {
-            noseLm.x() < earLm.x()
+        val isFacingLeft = if (activeFrame.noseX != null && noseVis >= 0.25f) {
+            activeFrame.noseX < activeFrame.earX
         } else {
             useLeft
         }
 
-        val neckHeight = maxOf(0.01f, shoulderMidY - earLm.y())
+        val neckHeight = maxOf(0.01f, shoulderMidY - activeFrame.earY)
 
         // 3. Anatomically Derived Tragus (Ear Canal Opening Flap):
-        // Corrects MediaPipe raw auricle landmark toward the jaw hinge
-        val mouthLm = if (useLeft) landmarks.getOrNull(MOUTH_LEFT) else landmarks.getOrNull(MOUTH_RIGHT)
         val (tragusX, tragusY) = deriveTragusLandmark(
-            earX = earLm.x(),
-            earY = earLm.y(),
+            earX = activeFrame.earX,
+            earY = activeFrame.earY,
             isFacingLeft = isFacingLeft,
             neckHeight = neckHeight,
-            mouthX = mouthLm?.x(),
-            mouthY = mouthLm?.y()
+            mouthX = activeFrame.mouthX,
+            mouthY = activeFrame.mouthY
         )
 
         // 4. Anatomically Derived C7 (Neck Base) Landmark:
-        // Uses calibrated regression over neck height and shoulder width
         val (c7X, c7Y) = deriveC7Landmark(
             shoulderMidX = shoulderMidX,
             shoulderMidY = shoulderMidY,
@@ -399,6 +665,37 @@ object PostureAnalyzer {
             shoulderWidth = shoulderWidth
         )
 
+        // Frame dimensions:
+        val w = if (imageWidth > 0) imageWidth else 1000
+        val h = if (imageHeight > 0) imageHeight else 1000
+
+        // Calculate instantaneous unsmoothed CVA:
+        val rawShoulderMidX = (leftShLm.x() + rightShLm.x()) / 2f
+        val rawShoulderMidY = (leftShLm.y() + rightShLm.y()) / 2f
+        val rawNeckH = maxOf(0.01f, rawShoulderMidY - earLm.y())
+        val rawFacingLeft = if (noseLm != null && noseVis >= 0.25f) noseLm.x() < earLm.x() else useLeft
+        val (rawTX, rawTY) = deriveTragusLandmark(earLm.x(), earLm.y(), rawFacingLeft, rawNeckH, mouthLm?.x(), mouthLm?.y())
+        val (rawC7X, rawC7Y) = deriveC7Landmark(rawShoulderMidX, rawShoulderMidY, rawTX, rawTY, rawFacingLeft, hipMidY, abs(leftShLm.x() - rightShLm.x()))
+        val rawDyPx = (rawC7Y * h) - (rawTY * h)
+        val rawDxPx = abs((rawTX * w) - (rawC7X * w))
+        val rawInstantCva = if (rawDyPx > 1f) Math.toDegrees(atan2(rawDyPx.toDouble(), rawDxPx.toDouble())).toFloat() else 0f
+
+        val tXPx = tragusX * w
+        val tYPx = tragusY * h
+        val cXPx = c7X * w
+        val cYPx = c7Y * h
+        val dyPx = cYPx - tYPx
+        val dxPx = abs(tXPx - cXPx)
+        val currentCva = if (dyPx > 1f) Math.toDegrees(atan2(dyPx.toDouble(), dxPx.toDouble())).toFloat() else 0f
+
+        val (jitterTragus, jitterC7, cvaStdDev) = smoother.updateLandmarkJitterAndCva(
+            tragusXPx = tXPx,
+            tragusYPx = tYPx,
+            c7XPx = cXPx,
+            c7YPx = cYPx,
+            cva = currentCva
+        )
+
         return computeMetrics(
             earX = tragusX,
             earY = tragusY,
@@ -406,9 +703,9 @@ object PostureAnalyzer {
             shX = c7X,
             shY = c7Y,
             shVis = maxOf(shVis, (leftShVis + rightShVis) / 2f),
-            sideLabel = if (useLeft) "Left" else "Right",
-            otherEarX = otherEarLm.x(),
-            otherEarY = otherEarLm.y(),
+            sideLabel = sideLabel,
+            otherEarX = activeFrame.otherEarX,
+            otherEarY = activeFrame.otherEarY,
             otherEarVis = otherEarVis,
             shoulderAlignment = shoulderAlignment,
             hipVisible = hipVisible,
@@ -416,8 +713,13 @@ object PostureAnalyzer {
             imageHeight = imageHeight,
             rawShoulderX = shoulderMidX,
             rawShoulderY = shoulderMidY,
-            rawEarX = earLm.x(),
-            rawEarY = earLm.y()
+            rawEarX = activeFrame.earX,
+            rawEarY = activeFrame.earY,
+            jitterTragusPx = jitterTragus,
+            jitterC7Px = jitterC7,
+            cvaStdDev = cvaStdDev,
+            rawInstantaneousCva = rawInstantCva,
+            isSmoothed = enableSmoothing
         )
     }
 
@@ -443,10 +745,15 @@ object PostureAnalyzer {
         rawShoulderX: Float = shX,
         rawShoulderY: Float = shY,
         rawEarX: Float = earX,
-        rawEarY: Float = earY
+        rawEarY: Float = earY,
+        jitterTragusPx: Float = 0f,
+        jitterC7Px: Float = 0f,
+        cvaStdDev: Float = 0f,
+        rawInstantaneousCva: Float? = null,
+        isSmoothed: Boolean = false
     ): PostureMetrics {
         if (earVis < 0.3f || shVis < 0.3f) {
-            val metrics = PostureMetrics(0f, 0f, 0f, false, "Turn sideways — show ear & shoulder")
+            val metrics = PostureMetrics(0f, 0f, 0f, false, "Turn sideways — show ear & shoulder", sideLabel = sideLabel)
             Log.d(TAG, "Detection rejected: earVis=$earVis, shVis=$shVis")
             return metrics
         }
@@ -503,14 +810,17 @@ object PostureAnalyzer {
                 rawEarXNorm = rawEarX,
                 rawEarYNorm = rawEarY,
                 rawEarXPx = rawEarX * w,
-                rawEarYPx = rawEarY * h
+                rawEarYPx = rawEarY * h,
+                jitterTragusPx = jitterTragusPx,
+                jitterC7Px = jitterC7Px,
+                cvaStdDev = cvaStdDev,
+                rawInstantaneousCva = rawInstantaneousCva ?: 0f,
+                isSmoothed = isSmoothed
             )
         }
 
         // 1. True Craniovertebral Angle (CVA) in degrees:
         // Angle formed by the vector from C7 to Tragus with the HORIZONTAL line passing through C7.
-        // In the right triangle: Horizontal adjacent = dxPx, Vertical opposite = dyPx.
-        // tan(CVA) = dyPx / dxPx -> CVA = atan2(dyPx, dxPx)
         val cvaPixelRad = atan2(dyPx.toDouble(), dxPx.toDouble())
         val cvaPixel = Math.toDegrees(cvaPixelRad).toFloat()
 
@@ -550,6 +860,8 @@ object PostureAnalyzer {
             else -> "Adjust posture"
         }
 
+        val rawInstCva = rawInstantaneousCva ?: cvaPixel
+
         if (DEV_MODE) {
             Log.d(
                 TAG,
@@ -562,7 +874,7 @@ object PostureAnalyzer {
                     "Shoulder(px)=(${"%.1f".format(shoulderXPx)}, ${"%.1f".format(shoulderYPx)}) | " +
                     "dxPx=${"%.1f".format(dxPx)}, dyPx=${"%.1f".format(dyPx)} | " +
                     "Frame=${w}x${h} (aspect=${"%.2f".format(w.toFloat() / h)}) | " +
-                    "CVA(pixel)=${"%.1f".format(cvaPixel)}°, CVA(norm)=${"%.1f".format(cvaNorm)}°, " +
+                    "CVA(pixel)=${"%.1f".format(cvaPixel)}° (rawInstant=${"%.1f".format(rawInstCva)}°, jitter=[T:${"%.1f".format(jitterTragusPx)}px, C7:${"%.1f".format(jitterC7Px)}px]), " +
                     "VertAngle=${"%.1f".format(angleWithVertical)}° | TargetBand=[${CVA_MIN}..${CVA_MAX}] | Posture=$posture (cvaOk=$cvaOk, isCorrect=$isCorrect, reason='$reason')"
             )
         }
@@ -595,7 +907,12 @@ object PostureAnalyzer {
             rawEarXNorm = rawEarX,
             rawEarYNorm = rawEarY,
             rawEarXPx = rawEarX * w,
-            rawEarYPx = rawEarY * h
+            rawEarYPx = rawEarY * h,
+            jitterTragusPx = jitterTragusPx,
+            jitterC7Px = jitterC7Px,
+            cvaStdDev = cvaStdDev,
+            rawInstantaneousCva = rawInstCva,
+            isSmoothed = isSmoothed
         )
     }
 }
