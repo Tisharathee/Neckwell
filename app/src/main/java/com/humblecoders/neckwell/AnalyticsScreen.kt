@@ -37,6 +37,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -45,13 +46,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.humblecoders.neckwell.ui.theme.AccentTeal
-import com.humblecoders.neckwell.ui.theme.AccentTealDark
+import com.humblecoders.neckwell.ui.theme.NeckWellAccent
+import com.humblecoders.neckwell.ui.theme.NeckWellAccentDark
+import com.humblecoders.neckwell.ui.theme.NeckWellBackground
+import com.humblecoders.neckwell.ui.theme.NeckWellDivider
+import com.humblecoders.neckwell.ui.theme.NeckWellSurfaceBright
+import com.humblecoders.neckwell.ui.theme.NeckWellTextPrimary
+import com.humblecoders.neckwell.ui.theme.NeckWellTextSecondary
 import com.humblecoders.neckwell.ui.theme.AlertCoral
-import com.humblecoders.neckwell.ui.theme.BackgroundGray
 import com.humblecoders.neckwell.ui.theme.InfoBlue
-import com.humblecoders.neckwell.ui.theme.TextDark
-import com.humblecoders.neckwell.ui.theme.TextGray
 import com.humblecoders.neckwell.ui.theme.WarningAmber
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -69,32 +72,32 @@ fun AnalyticsScreen() {
         if (todayData.isEmpty()) 0 else todayData.map { calculatePostureScore(it.posture) }.average().toInt()
     }
 
-    Column(Modifier.fillMaxSize().background(BackgroundGray)) {
+    Column(Modifier.fillMaxSize().background(NeckWellBackground)) {
         NeckWellHeader(
             title = "Analytics",
             subtitle = "Daily posture analysis",
             compact = true,
             action = {
                 IconButton(onClick = ::refresh) {
-                    Icon(Icons.Outlined.Refresh, "Refresh analytics", tint = Color.White)
+                    Icon(Icons.Outlined.Refresh, "Refresh analytics", tint = NeckWellTextSecondary)
                 }
             }
         )
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             NeckWellCard {
                 Row(
                     Modifier.fillMaxWidth().padding(20.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconTile(Icons.Outlined.QueryStats, AccentTealDark, size = 52)
+                    IconTile(Icons.Outlined.QueryStats, NeckWellAccent, size = 52)
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("Today's average", color = TextGray, fontSize = 13.sp)
-                        Text("$average% posture score", color = TextDark, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                        Text("Based on ${todayData.size} recorded readings", color = TextGray, fontSize = 12.sp)
+                        Text("Today's average", color = NeckWellTextSecondary, fontSize = 13.sp)
+                        Text("$average% posture score", color = NeckWellTextPrimary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Text("Based on ${todayData.size} recorded readings", color = NeckWellTextSecondary, fontSize = 12.sp)
                     }
                 }
             }
@@ -131,7 +134,7 @@ fun HourlyBarChart(hourlyData: List<Pair<String, Float>>) {
         Text(
             "No posture readings yet today",
             Modifier.fillMaxWidth().padding(34.dp),
-            color = TextGray,
+            color = NeckWellTextSecondary,
             textAlign = TextAlign.Center
         )
         return
@@ -145,11 +148,11 @@ fun HourlyBarChart(hourlyData: List<Pair<String, Float>>) {
         val chartHeight = size.height - 28.dp.toPx()
         val slotWidth = size.width / hourlyData.size
         val barWidth = (slotWidth * 0.48f).coerceAtMost(34.dp.toPx())
-        drawLine(Color(0xFFE4EAEE), Offset(0f, chartHeight), Offset(size.width, chartHeight), 1.dp.toPx())
+        drawLine(NeckWellDivider, Offset(0f, chartHeight), Offset(size.width, chartHeight), 1.dp.toPx())
         hourlyData.forEachIndexed { index, (_, score) ->
             val height = (score / 100f) * chartHeight * progress.value
             val color = when {
-                score >= 80 -> AccentTeal
+                score >= 80 -> NeckWellAccent
                 score >= 60 -> WarningAmber
                 else -> AlertCoral
             }
@@ -157,13 +160,13 @@ fun HourlyBarChart(hourlyData: List<Pair<String, Float>>) {
                 color = color,
                 topLeft = Offset(index * slotWidth + (slotWidth - barWidth) / 2f, chartHeight - height),
                 size = Size(barWidth, height),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(8.dp.toPx())
+                cornerRadius = CornerRadius(8.dp.toPx())
             )
         }
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
         hourlyData.forEach { (time, _) ->
-            Text(time, color = TextGray, fontSize = 10.sp, textAlign = TextAlign.Center)
+            Text(time, color = NeckWellTextSecondary, fontSize = 10.sp, textAlign = TextAlign.Center)
         }
     }
 }
@@ -173,7 +176,7 @@ private data class DistributionStyle(val label: String, val color: Color)
 @Composable
 fun PostureDistributionChart(distribution: Map<String, Int>) {
     val postureTypes = listOf(
-        DistributionStyle("Excellent", AccentTeal),
+        DistributionStyle("Excellent", NeckWellAccent),
         DistributionStyle("Good", InfoBlue),
         DistributionStyle("Okay", WarningAmber),
         DistributionStyle("Poor", AlertCoral)
@@ -194,7 +197,7 @@ fun PostureDistributionChart(distribution: Map<String, Int>) {
                 Spacer(Modifier.height(7.dp))
                 Box(Modifier.width(46.dp).height(height).background(style.color, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp)))
                 Spacer(Modifier.height(8.dp))
-                Text(style.label, color = TextGray, fontSize = 11.sp, textAlign = TextAlign.Center)
+                Text(style.label, color = NeckWellTextSecondary, fontSize = 11.sp, textAlign = TextAlign.Center)
             }
         }
     }

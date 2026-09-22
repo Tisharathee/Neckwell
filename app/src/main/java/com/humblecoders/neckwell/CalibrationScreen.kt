@@ -20,6 +20,22 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+
+import com.humblecoders.neckwell.ui.theme.NeckWellBackground
+import com.humblecoders.neckwell.ui.theme.NeckWellSurface
+import com.humblecoders.neckwell.ui.theme.NeckWellSurfaceVariant
+import com.humblecoders.neckwell.ui.theme.NeckWellSurfaceBright
+import com.humblecoders.neckwell.ui.theme.NeckWellAccent
+import com.humblecoders.neckwell.ui.theme.NeckWellAccentSurface
+import com.humblecoders.neckwell.ui.theme.NeckWellTextPrimary
+import com.humblecoders.neckwell.ui.theme.NeckWellTextSecondary
+import com.humblecoders.neckwell.ui.theme.NeckWellTextMuted
+import com.humblecoders.neckwell.ui.theme.NeckWellBorder
+import com.humblecoders.neckwell.ui.theme.AlertCoral
+import com.humblecoders.neckwell.ui.theme.WarningAmber
+import com.humblecoders.neckwell.ui.theme.InfoBlue
+import com.humblecoders.neckwell.ui.theme.Purple
+
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -233,7 +249,7 @@ fun CalibrationScreen(navController: NavController) {
             }
     }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(Modifier.fillMaxSize().background(NeckWellBackground)) {
         if (hasCameraPermission) {
             CameraPreviewWithAnalysis(
                 onMetrics = { metrics, frameBitmap ->
@@ -324,7 +340,7 @@ fun CalibrationScreen(navController: NavController) {
                 enter = androidx.compose.animation.fadeIn(),
                 exit = androidx.compose.animation.fadeOut()
             ) {
-                Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.5f)))
+                Box(Modifier.fillMaxSize().background(NeckWellSurfaceBright.copy(alpha = 0.5f)))
             }
 
             // Status overlay card
@@ -334,7 +350,7 @@ fun CalibrationScreen(navController: NavController) {
                     .padding(horizontal = 16.dp, vertical = 12.dp)
                     .fillMaxWidth()
                     .heightIn(max = 560.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xE6101820))
+                colors = CardDefaults.cardColors(containerColor = NeckWellSurface.copy(alpha = 0.9f))
             ) {
                 Column(
                     modifier = Modifier
@@ -343,7 +359,7 @@ fun CalibrationScreen(navController: NavController) {
                 ) {
 
                     androidx.compose.animation.Crossfade(targetState = statusText) { text ->
-                        Text(text, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text(text, color = NeckWellTextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
                     Spacer(Modifier.height(6.dp))
 
@@ -356,19 +372,19 @@ fun CalibrationScreen(navController: NavController) {
                         ) {
                             Text(
                                 "Live CVA: ${"%.1f".format(cvaValue)}°",
-                                color = if (PostureAnalyzer.isGoodPosture(cvaValue)) Color(0xFF4EE1A0) else Color(0xFFFF6B6B),
+                                color = if (PostureAnalyzer.isGoodPosture(cvaValue)) NeckWellAccent else AlertCoral,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
                                 "Target: ${PostureAnalyzer.CVA_MIN.toInt()}°–${PostureAnalyzer.CVA_MAX.toInt()}° (Raw: ${cvaValue}°)",
-                                color = Color.LightGray,
+                                color = NeckWellTextSecondary,
                                 fontSize = 11.sp
                             )
                         }
                         Text(
                             "Lateral Tilt (Roll): ${"%.1f".format(lateralTiltValue)}°  |  Stable: $stableFrames / $REQUIRED_STABLE_FRAMES",
-                            color = Color.White.copy(alpha = 0.85f),
+                            color = NeckWellTextPrimary.copy(alpha = 0.85f),
                             fontSize = 12.sp
                         )
 
@@ -382,12 +398,12 @@ fun CalibrationScreen(navController: NavController) {
                                 ) {
                                     Text(
                                         "Tragus: (${lm.tragusXPx.toInt()}, ${lm.tragusYPx.toInt()})  C7: (${lm.c7XPx.toInt()}, ${lm.c7YPx.toInt()})",
-                                        color = Color.Cyan.copy(alpha = 0.9f),
+                                        color = InfoBlue.copy(alpha = 0.9f),
                                         fontSize = 11.sp
                                     )
                                     Text(
                                         "Frame: ${lm.imageWidth}x${lm.imageHeight}",
-                                        color = Color.Gray,
+                                        color = NeckWellTextSecondary,
                                         fontSize = 11.sp
                                     )
                                 }
@@ -398,12 +414,12 @@ fun CalibrationScreen(navController: NavController) {
                                 ) {
                                     Text(
                                         "Instant: ${"%.1f".format(lm.rawInstantaneousCva)}° (±${"%.2f".format(lm.cvaStdDev)}°)",
-                                        color = Color(0xFFFFB74D),
+                                        color = WarningAmber,
                                         fontSize = 11.sp
                                     )
                                     Text(
                                         "Jitter: T:${"%.1f".format(lm.jitterTragusPx)}px / C7:${"%.1f".format(lm.jitterC7Px)}px",
-                                        color = if (lm.jitterTragusPx <= 2.5f && lm.jitterC7Px <= 2.5f) Color(0xFF4EE1A0) else Color(0xFFFF8A80),
+                                        color = if (lm.jitterTragusPx <= 2.5f && lm.jitterC7Px <= 2.5f) NeckWellAccent else AlertCoral,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold
                                     )
@@ -415,8 +431,8 @@ fun CalibrationScreen(navController: NavController) {
                         // High-visibility captured CVA result card shown immediately upon capture
                         Surface(
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                            color = Color(0xFF133E32).copy(alpha = 0.92f),
-                            border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF4EE1A0)),
+                            color = NeckWellAccentSurface.copy(alpha = 0.92f),
+                            border = androidx.compose.foundation.BorderStroke(1.5.dp, NeckWellAccent),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp)
@@ -429,68 +445,68 @@ fun CalibrationScreen(navController: NavController) {
                                 ) {
                                     Text(
                                         "CAPTURED CVA (VALIDATION)",
-                                        color = Color(0xFF4EE1A0),
+                                        color = NeckWellAccent,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         letterSpacing = 1.sp
                                     )
                                     Text(
                                         "Raw: ${capturedRawCva}°",
-                                        color = Color.LightGray,
+                                        color = NeckWellTextSecondary,
                                         fontSize = 11.sp
                                     )
                                 }
                                 Spacer(Modifier.height(2.dp))
                                 Text(
                                     "CVA: ${"%.1f".format(capturedRawCva)}°",
-                                    color = if (PostureAnalyzer.isGoodPosture(capturedRawCva)) Color.White else Color(0xFFFF6B6B),
+                                    color = if (PostureAnalyzer.isGoodPosture(capturedRawCva)) NeckWellTextPrimary else AlertCoral,
                                     fontSize = 34.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
                                 Text(
                                     "Target Band: ${PostureAnalyzer.CVA_MIN.toInt()}°–${PostureAnalyzer.CVA_MAX.toInt()}°  •  Posture: ${capturedMetrics?.posture ?: PostureAnalyzer.classifyPosture(capturedRawCva)}",
-                                    color = if (PostureAnalyzer.isGoodPosture(capturedRawCva)) Color(0xFF4EE1A0) else Color(0xFFFF6B6B),
+                                    color = if (PostureAnalyzer.isGoodPosture(capturedRawCva)) NeckWellAccent else AlertCoral,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
                                     "Angle with Horiz: ${"%.1f".format(capturedMetrics?.cvaPixelSpace ?: capturedRawCva)}°  •  Angle with Vert: ${"%.1f".format(capturedMetrics?.angleWithVertical ?: (90f - capturedRawCva))}°",
-                                    color = Color.White.copy(alpha = 0.9f),
+                                    color = NeckWellTextPrimary.copy(alpha = 0.9f),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium
                                 )
                                 Text(
                                     "Aspect-Distorted Norm CVA: ${"%.1f".format(capturedMetrics?.cvaNormalizedSpace ?: capturedRawCva)}°  •  Lateral Tilt: ${"%.1f".format(capturedLateralTilt)}°",
-                                    color = Color.LightGray,
+                                    color = NeckWellTextSecondary,
                                     fontSize = 11.sp
                                 )
 
                                 Spacer(Modifier.height(6.dp))
-                                HorizontalDivider(color = Color(0xFF4EE1A0).copy(alpha = 0.3f), thickness = 0.5.dp)
+                                HorizontalDivider(color = NeckWellAccent.copy(alpha = 0.3f), thickness = 0.5.dp)
                                 Spacer(Modifier.height(4.dp))
 
                                  // Raw landmark coordinates
                                 capturedMetrics?.let { m ->
                                     Text(
                                         "Tragus (Ear): (${"%.1f".format(m.tragusXPx)}, ${"%.1f".format(m.tragusYPx)}) px  [norm: ${"%.3f".format(m.tragusXNorm)}, ${"%.3f".format(m.tragusYNorm)}]",
-                                        color = Color.Cyan,
+                                        color = InfoBlue,
                                         fontSize = 11.sp
                                     )
                                     Text(
                                         "C7 Neck Base: (${"%.1f".format(m.c7XPx)}, ${"%.1f".format(m.c7YPx)}) px  [norm: ${"%.3f".format(m.c7XNorm)}, ${"%.3f".format(m.c7YNorm)}]",
-                                        color = Color.Yellow,
+                                        color = WarningAmber,
                                         fontSize = 11.sp
                                     )
                                     if (m.shoulderYPx > m.c7YPx + 2f || Math.abs(m.shoulderXPx - m.c7XPx) > 2f) {
                                         Text(
                                             "Shoulder Midpoint: (${"%.1f".format(m.shoulderXPx)}, ${"%.1f".format(m.shoulderYPx)}) px  (C7 elevated +${(PostureAnalyzer.c7NeckUpwardRatio * 100).toInt()}% & back +${(PostureAnalyzer.c7PosteriorRatio * 100).toInt()}%)",
-                                            color = Color(0xFFFFB74D),
+                                            color = WarningAmber,
                                             fontSize = 10.sp
                                         )
                                     }
                                     Text(
                                         "Frame Dimensions: ${m.imageWidth}x${m.imageHeight} px (Aspect: ${"%.2f".format(m.imageWidth.toFloat() / maxOf(1, m.imageHeight))})",
-                                        color = Color.White.copy(alpha = 0.75f),
+                                        color = NeckWellTextPrimary.copy(alpha = 0.75f),
                                         fontSize = 10.sp
                                     )
                                 }
@@ -499,7 +515,7 @@ fun CalibrationScreen(navController: NavController) {
                                     Spacer(Modifier.height(4.dp))
                                     Text(
                                         "Logged: ${file.name}",
-                                        color = Color(0xFF4EE1A0),
+                                        color = NeckWellAccent,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.SemiBold
                                     )
@@ -511,7 +527,7 @@ fun CalibrationScreen(navController: NavController) {
 
                     // Clinical Reference Comparison Section
                     Spacer(Modifier.height(6.dp))
-                    HorizontalDivider(color = Color(0xFFFF00FF).copy(alpha = 0.4f), thickness = 0.5.dp)
+                    HorizontalDivider(color = Purple.copy(alpha = 0.4f), thickness = 0.5.dp)
                     Spacer(Modifier.height(6.dp))
 
                     Row(
@@ -521,7 +537,7 @@ fun CalibrationScreen(navController: NavController) {
                     ) {
                         Text(
                             "Clinical Comparison: ${if (isClinicalRefActive) "ACTIVE" else "OFF"}",
-                            color = if (isClinicalRefActive) Color(0xFFFF00FF) else Color.LightGray,
+                            color = if (isClinicalRefActive) Purple else NeckWellTextSecondary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -533,13 +549,13 @@ fun CalibrationScreen(navController: NavController) {
                                 },
                                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                             ) {
-                                Text(if (isClinicalRefActive) "Disable" else "Enable", fontSize = 11.sp, color = Color(0xFFFF00FF))
+                                Text(if (isClinicalRefActive) "Disable" else "Enable", fontSize = 11.sp, color = Purple)
                             }
                             TextButton(
                                 onClick = { showClinicalInputs = !showClinicalInputs },
                                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                             ) {
-                                Text(if (showClinicalInputs) "Hide Inputs" else "Set Ref", fontSize = 11.sp, color = Color.White)
+                                Text(if (showClinicalInputs) "Hide Inputs" else "Set Ref", fontSize = 11.sp, color = NeckWellTextPrimary)
                             }
                         }
                     }
@@ -550,8 +566,8 @@ fun CalibrationScreen(navController: NavController) {
                             val errors = PostureAnalyzer.computeLandmarkErrors(currentMetrics, clinicalReference)
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
-                                color = Color(0xFF24102C).copy(alpha = 0.95f),
-                                border = BorderStroke(1.dp, Color(0xFFFF00FF).copy(alpha = 0.6f)),
+                                color = NeckWellSurface.copy(alpha = 0.95f),
+                                border = BorderStroke(1.dp, Purple.copy(alpha = 0.6f)),
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                             ) {
                                 Column(Modifier.padding(10.dp)) {
@@ -560,30 +576,30 @@ fun CalibrationScreen(navController: NavController) {
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Text("CLINICAL ERROR EVALUATION", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF00FF))
+                                        Text("CLINICAL ERROR EVALUATION", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Purple)
                                         Text(
                                             if (errors.isTragusAccurate && errors.isC7Accurate) "ALIGNED (≤8px) ✓" else "NEEDS CALIBRATION",
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (errors.isTragusAccurate && errors.isC7Accurate) Color(0xFF4EE1A0) else Color(0xFFFF6B6B)
+                                            color = if (errors.isTragusAccurate && errors.isC7Accurate) NeckWellAccent else AlertCoral
                                         )
                                     }
                                     Spacer(Modifier.height(4.dp))
                                     Text(
                                         "Tragus: App (${"%.1f".format(currentMetrics.tragusXPx)}, ${"%.1f".format(currentMetrics.tragusYPx)}) vs Ref (${clinicalReference.tragusXPx.toInt()}, ${clinicalReference.tragusYPx.toInt()})  →  Error: ${"%.1f".format(errors.tragusPixelError)} px",
                                         fontSize = 10.sp,
-                                        color = if (errors.isTragusAccurate) Color.White else Color(0xFFFF8080)
+                                        color = if (errors.isTragusAccurate) NeckWellTextPrimary else AlertCoral
                                     )
                                     Text(
                                         "C7 Base: App (${"%.1f".format(currentMetrics.c7XPx)}, ${"%.1f".format(currentMetrics.c7YPx)}) vs Ref (${clinicalReference.c7XPx.toInt()}, ${clinicalReference.c7YPx.toInt()})  →  Error: ${"%.1f".format(errors.c7PixelError)} px",
                                         fontSize = 10.sp,
-                                        color = if (errors.isC7Accurate) Color.White else Color(0xFFFF8080)
+                                        color = if (errors.isC7Accurate) NeckWellTextPrimary else AlertCoral
                                     )
                                     if (clinicalReference.expectedCva != null) {
                                         Text(
                                             "CVA: App ${"%.1f".format(currentMetrics.cva)}° vs Ref ${"%.1f".format(clinicalReference.expectedCva)}°  →  ΔCVA: ${"%.1f".format(errors.cvaDelta)}°",
                                             fontSize = 10.sp,
-                                            color = if (errors.cvaDelta <= 1.5f) Color(0xFF4EE1A0) else Color(0xFFFF8080),
+                                            color = if (errors.cvaDelta <= 1.5f) NeckWellAccent else AlertCoral,
                                             fontWeight = FontWeight.SemiBold
                                         )
                                     }
@@ -595,12 +611,12 @@ fun CalibrationScreen(navController: NavController) {
                     if (showClinicalInputs) {
                         Surface(
                             shape = RoundedCornerShape(6.dp),
-                            color = Color(0xFF14141E).copy(alpha = 0.95f),
-                            border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.4f)),
+                            color = NeckWellSurface.copy(alpha = 0.95f),
+                            border = BorderStroke(1.dp, NeckWellTextSecondary.copy(alpha = 0.4f)),
                             modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 4.dp)
                         ) {
                             Column(Modifier.padding(8.dp)) {
-                                Text("Reference Coordinates (Clinical Software):", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                Text("Reference Coordinates (Clinical Software):", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = NeckWellTextPrimary)
                                 Spacer(Modifier.height(4.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                                     OutlinedTextField(
@@ -669,7 +685,7 @@ fun CalibrationScreen(navController: NavController) {
 
                     // Goniometer Live Tools & Session Recording Section
                     Spacer(Modifier.height(6.dp))
-                    HorizontalDivider(color = Color(0xFF4EE1A0).copy(alpha = 0.4f), thickness = 0.5.dp)
+                    HorizontalDivider(color = NeckWellAccent.copy(alpha = 0.4f), thickness = 0.5.dp)
                     Spacer(Modifier.height(6.dp))
 
                     Row(
@@ -679,7 +695,7 @@ fun CalibrationScreen(navController: NavController) {
                     ) {
                         Text(
                             "Goniometer Live Tools",
-                            color = Color(0xFF4EE1A0),
+                            color = NeckWellAccent,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -701,14 +717,14 @@ fun CalibrationScreen(navController: NavController) {
                                     if (isLiveSessionRecording) "Stop (${liveSessionSecondsLeft}s)" else "Record 15s",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (isLiveSessionRecording) Color(0xFFFF5252) else Color(0xFF4EE1A0)
+                                    color = if (isLiveSessionRecording) Color(0xFFFF5252) else NeckWellAccent
                                 )
                             }
                             TextButton(
                                 onClick = { showTuningPanel = !showTuningPanel },
                                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                             ) {
-                                Text(if (showTuningPanel) "Hide Tuning" else "Tune Offsets", fontSize = 11.sp, color = Color.White)
+                                Text(if (showTuningPanel) "Hide Tuning" else "Tune Offsets", fontSize = 11.sp, color = NeckWellTextPrimary)
                             }
                         }
                     }
@@ -716,17 +732,17 @@ fun CalibrationScreen(navController: NavController) {
                     if (showTuningPanel) {
                         Surface(
                             shape = RoundedCornerShape(6.dp),
-                            color = Color(0xFF0D251E).copy(alpha = 0.95f),
-                            border = BorderStroke(1.dp, Color(0xFF4EE1A0).copy(alpha = 0.5f)),
+                            color = NeckWellSurfaceVariant.copy(alpha = 0.95f),
+                            border = BorderStroke(1.dp, NeckWellAccent.copy(alpha = 0.5f)),
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                         ) {
                             Column(Modifier.padding(10.dp)) {
-                                Text("ANATOMICAL OFFSET TUNING (Goniometer Calibration)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4EE1A0))
+                                Text("ANATOMICAL OFFSET TUNING (Goniometer Calibration)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = NeckWellAccent)
                                 Spacer(Modifier.height(4.dp))
 
                                 // C7 Vertical Upward (ky_neck)
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                                    Text("C7 Elevation (ky): ${(tunedC7Ky * 100).toInt()}%", fontSize = 11.sp, color = Color.White)
+                                    Text("C7 Elevation (ky): ${(tunedC7Ky * 100).toInt()}%", fontSize = 11.sp, color = NeckWellTextPrimary)
                                     Row {
                                         Button(
                                             onClick = {
@@ -751,7 +767,7 @@ fun CalibrationScreen(navController: NavController) {
                                 // C7 Dorsal Back (kx_neck)
                                 Spacer(Modifier.height(4.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                                    Text("C7 Dorsal Back (kx): ${(tunedC7Kx * 100).toInt()}%", fontSize = 11.sp, color = Color.White)
+                                    Text("C7 Dorsal Back (kx): ${(tunedC7Kx * 100).toInt()}%", fontSize = 11.sp, color = NeckWellTextPrimary)
                                     Row {
                                         Button(
                                             onClick = {
@@ -776,7 +792,7 @@ fun CalibrationScreen(navController: NavController) {
                                 // Tragus Anterior Shift (k_ant)
                                 Spacer(Modifier.height(4.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                                    Text("Tragus Forward (k_ant): ${(tunedTragusAnt * 1000).toInt() / 10f}%", fontSize = 11.sp, color = Color.White)
+                                    Text("Tragus Forward (k_ant): ${(tunedTragusAnt * 1000).toInt() / 10f}%", fontSize = 11.sp, color = NeckWellTextPrimary)
                                     Row {
                                         Button(
                                             onClick = {
@@ -801,7 +817,7 @@ fun CalibrationScreen(navController: NavController) {
                                 // Smoothing Window Size
                                 Spacer(Modifier.height(4.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                                    Text("Smoothing: ${if (tunedSmoothingEnabled) "${tunedSmoothingWindow} frames" else "OFF"}", fontSize = 11.sp, color = Color.White)
+                                    Text("Smoothing: ${if (tunedSmoothingEnabled) "${tunedSmoothingWindow} frames" else "OFF"}", fontSize = 11.sp, color = NeckWellTextPrimary)
                                     Row {
                                         listOf(1, 3, 5, 7).forEach { wSize ->
                                             Button(
@@ -818,12 +834,12 @@ fun CalibrationScreen(navController: NavController) {
                                                     }
                                                 },
                                                 colors = ButtonDefaults.buttonColors(
-                                                    containerColor = if ((tunedSmoothingEnabled && tunedSmoothingWindow == wSize) || (!tunedSmoothingEnabled && wSize == 1)) Color(0xFF4EE1A0) else Color.DarkGray
+                                                    containerColor = if ((tunedSmoothingEnabled && tunedSmoothingWindow == wSize) || (!tunedSmoothingEnabled && wSize == 1)) NeckWellAccent else NeckWellSurfaceBright
                                                 ),
                                                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                                                 modifier = Modifier.height(26.dp).padding(horizontal = 2.dp)
                                             ) {
-                                                Text(if (wSize == 1) "Off" else "${wSize}f", fontSize = 10.sp, color = Color.Black)
+                                                Text(if (wSize == 1) "Off" else "${wSize}f", fontSize = 10.sp, color = NeckWellBackground)
                                             }
                                         }
                                     }
@@ -849,11 +865,11 @@ fun CalibrationScreen(navController: NavController) {
                                             tunedSmoothingWindow = PostureAnalyzer.smoothingWindowSize
                                             tunedSmoothingEnabled = PostureAnalyzer.isSmoothingEnabled
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                                        colors = ButtonDefaults.buttonColors(containerColor = NeckWellSurfaceBright),
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                         modifier = Modifier.height(28.dp)
                                     ) {
-                                        Text("Reset Defaults", fontSize = 10.sp, color = Color.White)
+                                        Text("Reset Defaults", fontSize = 10.sp, color = NeckWellTextPrimary)
                                     }
                                 }
                             }
@@ -861,12 +877,12 @@ fun CalibrationScreen(navController: NavController) {
                     }
 
                     // ESP32 sensor section
-                    HorizontalDivider(color = Color.Gray.copy(alpha = 0.5f), thickness = 0.5.dp)
+                    HorizontalDivider(color = NeckWellTextSecondary.copy(alpha = 0.5f), thickness = 0.5.dp)
                     Spacer(Modifier.height(6.dp))
 
                     Text(
                         "ESP32 Status: $espStatus",
-                        color = Color.Cyan,
+                        color = InfoBlue,
                         fontSize = 13.sp
                     )
 
@@ -874,7 +890,7 @@ fun CalibrationScreen(navController: NavController) {
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "Sensor Progress: $espProgress%",
-                            color = Color.Green,
+                            color = NeckWellAccent,
                             fontSize = 13.sp
                         )
                         LinearProgressIndicator(
@@ -890,12 +906,12 @@ fun CalibrationScreen(navController: NavController) {
                         Spacer(Modifier.height(6.dp))
                         Text(
                             "Sensor Pitch: ${"%.2f".format(espPitch)}°",
-                            color = Color.Yellow,
+                            color = WarningAmber,
                             fontSize = 13.sp
                         )
                         Text(
                             "Sensor Roll: ${"%.2f".format(espRoll)}°",
-                            color = Color.Yellow,
+                            color = WarningAmber,
                             fontSize = 13.sp
                         )
                     }
@@ -920,7 +936,7 @@ fun CalibrationScreen(navController: NavController) {
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("Camera permission required", color = Color.White)
+                Text("Camera permission required", color = NeckWellTextPrimary)
                 Spacer(Modifier.height(12.dp))
                 Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
                     Text("Grant Permission")
@@ -939,13 +955,13 @@ fun CalibrationScreen(navController: NavController) {
                         Text(
                             "Mean CVA: ${"%.2f".format(s.meanCva)}° ± ${"%.2f".format(s.cvaStdDev)}°",
                             fontWeight = FontWeight.Bold,
-                            color = if (PostureAnalyzer.isGoodPosture(s.meanCva)) Color(0xFF4EE1A0) else Color(0xFFFF6B6B)
+                            color = if (PostureAnalyzer.isGoodPosture(s.meanCva)) NeckWellAccent else AlertCoral
                         )
                         Text("CVA Range: ${"%.1f".format(s.minCva)}° – ${"%.1f".format(s.maxCva)}°")
                         Text("Frames in Good Posture (48°–50°): ${"%.1f".format(s.goodPosturePercentage)}%")
                         Text("Avg Landmark Jitter: Tragus ${"%.2f".format(s.avgTragusJitterPx)}px, C7 ${"%.2f".format(s.avgC7JitterPx)}px")
                         Spacer(Modifier.height(8.dp))
-                        Text("Saved CSV:\n${s.sessionFile.name}", fontSize = 11.sp, color = Color.Gray)
+                        Text("Saved CSV:\n${s.sessionFile.name}", fontSize = 11.sp, color = NeckWellTextSecondary)
                     }
                 },
                 confirmButton = {
@@ -1003,7 +1019,7 @@ private fun PostureLandmarkOverlay(
         }
         drawPath(
             path = dashPath,
-            color = Color.White.copy(alpha = 0.65f),
+            color = NeckWellTextPrimary.copy(alpha = 0.65f),
             style = Stroke(
                 width = 2.dp.toPx(),
                 pathEffect = PathEffect.dashPathEffect(floatArrayOf(20f, 15f), 0f)
@@ -1040,14 +1056,14 @@ private fun PostureLandmarkOverlay(
             }
             drawPath(
                 path = earCorrectionPath,
-                color = Color.Cyan.copy(alpha = 0.55f),
+                color = InfoBlue.copy(alpha = 0.55f),
                 style = Stroke(
                     width = 1.5.dp.toPx(),
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f)
                 )
             )
             drawCircle(
-                color = Color.Cyan.copy(alpha = 0.45f),
+                color = InfoBlue.copy(alpha = 0.45f),
                 radius = 4.dp.toPx(),
                 center = Offset(rawEarScreenX, rawEarScreenY),
                 style = Stroke(width = 1.5.dp.toPx())
@@ -1056,7 +1072,7 @@ private fun PostureLandmarkOverlay(
 
         // 4. Vector line from C7 to Tragus (Mint green)
         drawLine(
-            color = Color(0xFF4EE1A0),
+            color = NeckWellAccent,
             start = Offset(c7ScreenX, c7ScreenY),
             end = Offset(tragusScreenX, tragusScreenY),
             strokeWidth = 3.5.dp.toPx(),
@@ -1066,12 +1082,12 @@ private fun PostureLandmarkOverlay(
         // 5. Tragus Landmark (Cyan circle with outer halo)
         val tragusCenter = Offset(tragusScreenX, tragusScreenY)
         drawCircle(
-            color = Color.Cyan.copy(alpha = 0.25f),
+            color = InfoBlue.copy(alpha = 0.25f),
             radius = 16.dp.toPx(),
             center = tragusCenter
         )
         drawCircle(
-            color = Color.Cyan,
+            color = InfoBlue,
             radius = 7.dp.toPx(),
             center = tragusCenter
         )
@@ -1079,12 +1095,12 @@ private fun PostureLandmarkOverlay(
         // 6. C7 / Neck Base Landmark (Yellow circle with outer halo)
         val c7Center = Offset(c7ScreenX, c7ScreenY)
         drawCircle(
-            color = Color.Yellow.copy(alpha = 0.25f),
+            color = WarningAmber.copy(alpha = 0.25f),
             radius = 16.dp.toPx(),
             center = c7Center
         )
         drawCircle(
-            color = Color.Yellow,
+            color = WarningAmber,
             radius = 7.dp.toPx(),
             center = c7Center
         )
@@ -1103,7 +1119,7 @@ private fun PostureLandmarkOverlay(
             }
             drawPath(
                 path = refCvaPath,
-                color = Color(0xFFFF00FF).copy(alpha = 0.85f),
+                color = Purple.copy(alpha = 0.85f),
                 style = Stroke(
                     width = 2.dp.toPx(),
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 8f), 0f)
@@ -1117,7 +1133,7 @@ private fun PostureLandmarkOverlay(
             }
             drawPath(
                 path = tragusErrPath,
-                color = Color(0xFFFF00FF),
+                color = Purple,
                 style = Stroke(
                     width = 2.dp.toPx(),
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
@@ -1140,12 +1156,12 @@ private fun PostureLandmarkOverlay(
 
             // D. Clinical Tragus Marker (Magenta Diamond / Crosshair)
             drawCircle(
-                color = Color(0xFFFF00FF).copy(alpha = 0.25f),
+                color = Purple.copy(alpha = 0.25f),
                 radius = 16.dp.toPx(),
                 center = Offset(refTragusScreenX, refTragusScreenY)
             )
             drawCircle(
-                color = Color(0xFFFF00FF),
+                color = Purple,
                 radius = 6.dp.toPx(),
                 center = Offset(refTragusScreenX, refTragusScreenY)
             )
@@ -1169,21 +1185,21 @@ private fun PostureLandmarkOverlay(
                 isAntiAlias = true
                 textSize = 12.sp.toPx()
                 typeface = android.graphics.Typeface.DEFAULT_BOLD
-                setShadowLayer(4f, 2f, 2f, android.graphics.Color.BLACK)
+                setShadowLayer(4f, 2f, 2f, android.graphics.Color.parseColor("#0B0F0E"))
             }
 
-            paint.color = android.graphics.Color.CYAN
+            paint.color = android.graphics.Color.parseColor("#4DABF7")
             canvas.nativeCanvas.drawText("Tragus (Derived)", tragusScreenX + 24f, tragusScreenY - 8f, paint)
 
-            paint.color = android.graphics.Color.YELLOW
+            paint.color = android.graphics.Color.parseColor("#FFB347")
             canvas.nativeCanvas.drawText("C7 (Neck Base)", c7ScreenX + 24f, c7ScreenY - 8f, paint)
 
             if (shoulderScreenY > c7ScreenY + 2f || Math.abs(shoulderScreenX - c7ScreenX) > 2f) {
-                paint.color = android.graphics.Color.rgb(255, 165, 0)
+                paint.color = android.graphics.Color.parseColor("#FFB347")
                 canvas.nativeCanvas.drawText("Shoulder Midpoint", shoulderScreenX + 18f, shoulderScreenY + 16f, paint)
             }
 
-            paint.color = android.graphics.Color.rgb(78, 225, 160)
+            paint.color = android.graphics.Color.parseColor("#3ECF8E")
             paint.textSize = 14.sp.toPx()
             val midX = (tragusScreenX + c7ScreenX) / 2f
             val midY = (tragusScreenY + c7ScreenY) / 2f
@@ -1196,11 +1212,11 @@ private fun PostureLandmarkOverlay(
                 val refC7ScreenY = offsetY + (clinicalRef.c7YPx / imgH) * scaledH
 
                 val errs = PostureAnalyzer.computeLandmarkErrors(metrics, clinicalRef)
-                paint.color = android.graphics.Color.rgb(255, 0, 255)
+                paint.color = android.graphics.Color.parseColor("#A78BFA")
                 paint.textSize = 11.sp.toPx()
                 canvas.nativeCanvas.drawText("Ref Tragus (Δ${"%.1f".format(errs.tragusPixelError)}px)", refTragusScreenX + 18f, refTragusScreenY + 14f, paint)
 
-                paint.color = android.graphics.Color.rgb(255, 82, 82)
+                paint.color = android.graphics.Color.parseColor("#FF6B6B")
                 canvas.nativeCanvas.drawText("Ref C7 (Δ${"%.1f".format(errs.c7PixelError)}px)", refC7ScreenX + 18f, refC7ScreenY + 14f, paint)
             }
         }

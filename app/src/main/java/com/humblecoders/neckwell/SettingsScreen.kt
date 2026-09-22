@@ -44,13 +44,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.humblecoders.neckwell.ui.theme.AccentTealDark
-import com.humblecoders.neckwell.ui.theme.BackgroundGray
-import com.humblecoders.neckwell.ui.theme.BorderSoft
+import com.humblecoders.neckwell.ui.theme.NeckWellAccent
+import com.humblecoders.neckwell.ui.theme.NeckWellAccentDark
+import com.humblecoders.neckwell.ui.theme.NeckWellAccentSurface
+import com.humblecoders.neckwell.ui.theme.NeckWellBackground
+import com.humblecoders.neckwell.ui.theme.NeckWellBorder
+import com.humblecoders.neckwell.ui.theme.NeckWellSurfaceBright
+import com.humblecoders.neckwell.ui.theme.NeckWellTextPrimary
+import com.humblecoders.neckwell.ui.theme.NeckWellTextSecondary
+import com.humblecoders.neckwell.ui.theme.AlertCoral
 import com.humblecoders.neckwell.ui.theme.InfoBlue
-import com.humblecoders.neckwell.ui.theme.MintSurface
-import com.humblecoders.neckwell.ui.theme.TextDark
-import com.humblecoders.neckwell.ui.theme.TextGray
 
 import android.Manifest
 import android.content.ClipData
@@ -110,7 +113,7 @@ fun SettingsScreen(navController: NavController) {
         }
     }
 
-    Column(Modifier.fillMaxSize().background(BackgroundGray)) {
+    Column(Modifier.fillMaxSize().background(NeckWellBackground)) {
         NeckWellHeader("Settings", "Customize your experience", compact = true)
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -200,7 +203,7 @@ fun SettingsScreen(navController: NavController) {
                     Toast.makeText(context, targetMsg, Toast.LENGTH_SHORT).show()
                 }
 
-                val batteryColor = if (deviceStatus.isLowBattery) com.humblecoders.neckwell.ui.theme.AlertCoral else AccentTealDark
+                val batteryColor = if (deviceStatus.isLowBattery) AlertCoral else NeckWellAccent
                 SettingsClickableItem(
                     icon = Icons.Outlined.BatteryFull,
                     title = "NeckWell Device Battery",
@@ -303,7 +306,14 @@ fun SettingsScreen(navController: NavController) {
 @Composable
 private fun SettingsSection(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(title.uppercase(), color = TextGray, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
+        Text(
+            title.uppercase(),
+            color = NeckWellTextSecondary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp,
+            modifier = Modifier.padding(start = 4.dp, top = 8.dp)
+        )
         content()
     }
 }
@@ -327,17 +337,17 @@ private fun SettingsToggleItem(
             IconTile(icon, InfoBlue, size = 44)
             Spacer(Modifier.width(13.dp))
             Column(Modifier.weight(1f)) {
-                Text(title, color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                Text(description, color = TextGray, style = MaterialTheme.typography.bodyMedium)
+                Text(title, color = NeckWellTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(description, color = NeckWellTextSecondary, style = MaterialTheme.typography.bodyMedium)
             }
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
-                    checkedTrackColor = AccentTealDark,
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = BorderSoft
+                    checkedTrackColor = NeckWellAccent,
+                    uncheckedThumbColor = NeckWellTextSecondary,
+                    uncheckedTrackColor = NeckWellBorder
                 )
             )
         }
@@ -349,7 +359,7 @@ private fun SettingsClickableItem(
     icon: ImageVector,
     title: String,
     description: String,
-    iconTint: Color = AccentTealDark,
+    iconTint: Color = NeckWellAccent,
     onClick: () -> Unit
 ) {
     NeckWellCard {
@@ -357,13 +367,13 @@ private fun SettingsClickableItem(
             Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconTile(icon, iconTint, background = MintSurface, size = 44)
+            IconTile(icon, iconTint, background = NeckWellAccentSurface, size = 44)
             Spacer(Modifier.width(13.dp))
             Column(Modifier.weight(1f)) {
-                Text(title, color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                Text(description, color = TextGray, style = MaterialTheme.typography.bodyMedium)
+                Text(title, color = NeckWellTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(description, color = NeckWellTextSecondary, style = MaterialTheme.typography.bodyMedium)
             }
-            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = TextGray, modifier = Modifier.size(21.dp))
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = NeckWellTextSecondary, modifier = Modifier.size(21.dp))
         }
     }
 }
