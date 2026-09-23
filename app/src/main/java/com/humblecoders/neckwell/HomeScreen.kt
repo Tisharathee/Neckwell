@@ -178,6 +178,9 @@ fun HomeScreen() {
         }
     }
 
+    val userName = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.displayName?.takeIf { it.isNotBlank() } ?: "NeckWell"
+    val initial = userName.firstOrNull()?.uppercase() ?: "N"
+
     Column(Modifier.fillMaxSize().background(NeckWellBackground)) {
         // ── Greeting Header ──
         Box(
@@ -192,7 +195,7 @@ fun HomeScreen() {
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "$greeting, Tanishka",
+                        "$greeting, $userName",
                         color = NeckWellTextPrimary,
                         fontSize = 26.sp,
                         fontWeight = FontWeight.Bold,
@@ -221,7 +224,7 @@ fun HomeScreen() {
                         .background(NeckWellAccent.copy(alpha = 0.15f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("T", color = NeckWellAccent, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text(initial, color = NeckWellAccent, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 }
             }
         }
@@ -351,13 +354,25 @@ private fun PostureScoreRing(score: Int, color: Color) {
                 style = Stroke(stroke, cap = StrokeCap.Round)
             )
         }
+        val emoji = when {
+            score >= 80 -> "😄"
+            score >= 60 -> "😐"
+            else -> "😟"
+        }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                "$score",
-                color = NeckWellTextPrimary,
-                fontSize = 44.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    "$score",
+                    color = NeckWellTextPrimary,
+                    fontSize = 44.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    emoji,
+                    fontSize = 26.sp,
+                    modifier = Modifier.padding(bottom = 4.dp, start = 6.dp)
+                )
+            }
             Text(
                 "/100",
                 color = NeckWellTextMuted,

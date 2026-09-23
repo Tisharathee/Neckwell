@@ -91,6 +91,10 @@ fun CalibrationScreen(navController: NavController) {
     var cvaValue by remember { mutableFloatStateOf(0f) }
     var lateralTiltValue by remember { mutableFloatStateOf(0f) }
     var stableFrames by remember { mutableIntStateOf(0) }
+    
+    // Sustained good posture tracking
+    var goodPostureHoldStart by remember { mutableLongStateOf(0L) }
+    var hasTriggeredGoodPostureBeep by remember { mutableStateOf(false) }
     var calibrationTriggered by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var capturedBaseline by remember { mutableStateOf<Baseline?>(null) }
@@ -284,6 +288,23 @@ fun CalibrationScreen(navController: NavController) {
 
                         // Only increment stable frames when posture quality passes ALL gates (CVA, lateral tilt, alignment)
                         stableFrames = if (metrics.isCorrect) stableFrames + 1 else 0
+
+                        val isCurrentlyGood = PostureAnalyzer.isGoodPosture(metrics.cva)
+                        if (isCurrentlyGood) {
+                            if (goodPostureHoldStart == 0L) {
+                                goodPostureHoldStart = System.currentTimeMillis()
+                                hasTriggeredGoodPostureBeep = false
+                            } else {
+                                val holdDuration = System.currentTimeMillis() - goodPostureHoldStart
+                                if (holdDuration >= 12000L && !hasTriggeredGoodPostureBeep) {
+                                    AlertManager.playToneAlert(context, android.media.ToneGenerator.TONE_PROP_BEEP2, 150)
+                                    hasTriggeredGoodPostureBeep = true
+                                }
+                            }
+                        } else {
+                            goodPostureHoldStart = 0L
+                            hasTriggeredGoodPostureBeep = false
+                        }
 
                         if (stableFrames >= REQUIRED_STABLE_FRAMES) {
                             calibrationTriggered = true
