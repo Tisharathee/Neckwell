@@ -359,27 +359,11 @@ private fun PostureScoreRing(score: Int, color: Color) {
             score >= 60 -> "😐"
             else -> "😟"
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    "$score",
-                    color = NeckWellTextPrimary,
-                    fontSize = 44.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    emoji,
-                    fontSize = 26.sp,
-                    modifier = Modifier.padding(bottom = 4.dp, start = 6.dp)
-                )
-            }
-            Text(
-                "/100",
-                color = NeckWellTextMuted,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium
-            )
-        }
+        Text(
+            emoji,
+            fontSize = 58.sp,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
