@@ -92,15 +92,34 @@ object PostureAnalyzer {
     private const val LEFT_HIP = 23
     private const val RIGHT_HIP = 24
 
-    // Target clinical range for Craniovertebral Angle (CVA):
-    // Good posture: CVA is within 48°–50° (inclusive)
-    // Poor posture: CVA < 48° (forward head tilt) or CVA > 50° (hyperextension / head tilted back)
-    const val CVA_MIN = 48f
-    const val CVA_MAX = 50f
+    // Craniovertebral Angle (CVA) threshold bounds and default:
+    const val CVA_THRESHOLD_MIN = 45f
+    const val CVA_THRESHOLD_MAX = 57f
+    const val CVA_THRESHOLD_DEFAULT = 48f
 
-    fun isGoodPosture(cva: Float): Boolean = cva in CVA_MIN..CVA_MAX
+    // Active CVA threshold for posture classification (Good posture: CVA >= cvaThreshold)
+    // Clamped strictly to [CVA_THRESHOLD_MIN..CVA_THRESHOLD_MAX] (45°..57°)
+    var cvaThreshold: Float = CVA_THRESHOLD_DEFAULT
+        set(value) {
+            field = value.coerceIn(CVA_THRESHOLD_MIN, CVA_THRESHOLD_MAX)
+        }
+
+    fun isGoodPosture(cva: Float): Boolean = cva >= cvaThreshold
     fun isPoorPosture(cva: Float): Boolean = !isGoodPosture(cva)
-    fun classifyPosture(cva: Float): String = if (isGoodPosture(cva)) "Good" else "Poor"
+
+    fun classifyPosture(cva: Float): String {
+        val classification = if (isGoodPosture(cva)) "Good" else "Poor"
+        if (DEV_MODE) {
+            Log.d(
+                TAG,
+                "DEV: Raw CVA=${"%.1f".format(cva)}°, Active Threshold=${"%.1f".format(cvaThreshold)}°, Classification=$classification"
+            )
+        }
+        return classification
+    }
+
+    // Single unified calibration-block check using the exact same threshold
+    fun canCalibrate(cva: Float): Boolean = isGoodPosture(cva)
 
     // ---------------------------------------------------------------------------------------------
     // 1. Anatomical Tragus (Ear) Landmark Constants & Derivation:
@@ -339,6 +358,7 @@ object PostureAnalyzer {
     // Calibration Persistence & Tuning Helpers (for Goniometer on-device validation):
     // ---------------------------------------------------------------------------------------------
     private const val PREFS_NAME = "neckwell_calibration_prefs"
+    private const val KEY_CVA_THRESHOLD = "cva_threshold"
     private const val KEY_C7_KY_NECK = "c7_ky_neck"
     private const val KEY_C7_KX_NECK = "c7_kx_neck"
     private const val KEY_TRAGUS_ANTERIOR = "tragus_anterior_ratio"
@@ -348,6 +368,7 @@ object PostureAnalyzer {
     fun saveToPreferences(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit()
+            .putFloat(KEY_CVA_THRESHOLD, cvaThreshold)
             .putFloat(KEY_C7_KY_NECK, c7KyNeck)
             .putFloat(KEY_C7_KX_NECK, c7KxNeck)
             .putFloat(KEY_TRAGUS_ANTERIOR, tragusAnteriorRatio)
@@ -358,6 +379,10 @@ object PostureAnalyzer {
 
     fun loadFromPreferences(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (prefs.contains(KEY_CVA_THRESHOLD)) {
+            cvaThreshold = prefs.getFloat(KEY_CVA_THRESHOLD, CVA_THRESHOLD_DEFAULT)
+                .coerceIn(CVA_THRESHOLD_MIN, CVA_THRESHOLD_MAX)
+        }
         if (prefs.contains(KEY_C7_KY_NECK)) {
             c7KyNeck = prefs.getFloat(KEY_C7_KY_NECK, DEFAULT_C7_KY_NECK)
             c7KxNeck = prefs.getFloat(KEY_C7_KX_NECK, DEFAULT_C7_KX_NECK)
@@ -369,6 +394,7 @@ object PostureAnalyzer {
     }
 
     fun resetToDefaults(context: Context? = null) {
+        cvaThreshold = CVA_THRESHOLD_DEFAULT
         c7KyNeck = DEFAULT_C7_KY_NECK
         c7KyShoulder = DEFAULT_C7_KY_SHOULDER
         c7KxNeck = DEFAULT_C7_KX_NECK
@@ -404,16 +430,27 @@ object PostureAnalyzer {
         kxNeck: Float = c7KxNeck,
         kxShoulder: Float = c7KxShoulder
     ): Pair<Float, Float> {
-        val earToShoulderDistance = maxOf(0.01f, shoulderMidY - earY)
-        val sWidth = maxOf(0f, shoulderWidth ?: 0f)
+        val sWidth = maxOf(0.01f, shoulderWidth ?: (0.35f)) // fallback to 35% of frame width if null
+        
+        // Compute raw tilt angle
+        val rawDx = Math.abs(earX - shoulderMidX)
+        val rawDy = shoulderMidY - earY
+        val rawTiltAngle = Math.toDegrees(Math.atan2(rawDy.toDouble(), rawDx.toDouble())).toFloat()
+        
+        // Pose-dependent coefficients derived from least-squares fit on validation captures
+        val w0 = 0.070161f
+        val w1 = 0.002344f
+        val dyUp = sWidth * (w0 + w1 * rawTiltAngle)
+        
+        val v0 = 0.245558f
+        val v1 = -0.001656f
+        val dxBack = sWidth * (v0 + v1 * rawTiltAngle)
 
-        val dyUp = (kyNeck * earToShoulderDistance) + (kyShoulder * sWidth)
         val c7Y = shoulderMidY - dyUp
 
         // If facing Left (nose < ear), gaze is left (-X), so back of neck is right (+X).
         // If facing Right (nose > ear), gaze is right (+X), so back of neck is left (-X).
         val posteriorDirection = if (isFacingLeft) 1f else -1f
-        val dxBack = (kxNeck * earToShoulderDistance) + (kxShoulder * sWidth)
         val c7X = shoulderMidX + (posteriorDirection * dxBack)
 
         return Pair(c7X, c7Y)
@@ -853,8 +890,7 @@ object PostureAnalyzer {
         val reason = when {
             isCorrect -> "Good posture — hold still"
             !rollOk -> "Level your head (tilt: ${lateralTilt.toInt()}°)"
-            cvaPixel < CVA_MIN -> "Sit straight — head forward (CVA: ${"%.1f".format(cvaPixel)}° < 48°)"
-            cvaPixel > CVA_MAX -> "Sit natural — head tilted back (CVA: ${"%.1f".format(cvaPixel)}° > 50°)"
+            !cvaOk -> "Sit straight — head forward (CVA: ${"%.1f".format(cvaPixel)}° < ${cvaThreshold.toInt()}°)"
             !dxOk -> "Align head with shoulders (dx: ${"%.2f".format(dxNorm)})"
             !alignmentOk -> "Align shoulders over hips"
             else -> "Adjust posture"
@@ -863,6 +899,10 @@ object PostureAnalyzer {
         val rawInstCva = rawInstantaneousCva ?: cvaPixel
 
         if (DEV_MODE) {
+            Log.d(
+                TAG,
+                "DEV: Raw CVA=${"%.1f".format(cvaPixel)}°, Active Threshold=${"%.1f".format(cvaThreshold)}°, Classification=$posture"
+            )
             Log.d(
                 TAG,
                 "[$sideLabel] LANDMARK_TELEMETRY: " +
@@ -875,7 +915,7 @@ object PostureAnalyzer {
                     "dxPx=${"%.1f".format(dxPx)}, dyPx=${"%.1f".format(dyPx)} | " +
                     "Frame=${w}x${h} (aspect=${"%.2f".format(w.toFloat() / h)}) | " +
                     "CVA(pixel)=${"%.1f".format(cvaPixel)}° (rawInstant=${"%.1f".format(rawInstCva)}°, jitter=[T:${"%.1f".format(jitterTragusPx)}px, C7:${"%.1f".format(jitterC7Px)}px]), " +
-                    "VertAngle=${"%.1f".format(angleWithVertical)}° | TargetBand=[${CVA_MIN}..${CVA_MAX}] | Posture=$posture (cvaOk=$cvaOk, isCorrect=$isCorrect, reason='$reason')"
+                    "VertAngle=${"%.1f".format(angleWithVertical)}° | Threshold=${cvaThreshold}° | Posture=$posture (cvaOk=$cvaOk, isCorrect=$isCorrect, reason='$reason')"
             )
         }
 

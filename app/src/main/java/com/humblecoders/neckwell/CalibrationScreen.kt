@@ -110,12 +110,14 @@ fun CalibrationScreen(navController: NavController) {
     var liveSessionSecondsLeft by remember { mutableIntStateOf(15) }
     var liveSessionSummary by remember { mutableStateOf<CalibrationLogger.LiveSessionSummary?>(null) }
     var showSessionDialog by remember { mutableStateOf(false) }
+    var showValidationDialog by remember { mutableStateOf(false) }
     var liveFrameCount by remember { mutableLongStateOf(0L) }
 
     var showTuningPanel by remember { mutableStateOf(false) }
     var tunedC7Ky by remember { mutableFloatStateOf(PostureAnalyzer.c7KyNeck) }
     var tunedC7Kx by remember { mutableFloatStateOf(PostureAnalyzer.c7KxNeck) }
     var tunedTragusAnt by remember { mutableFloatStateOf(PostureAnalyzer.tragusAnteriorRatio) }
+    var tunedCvaThreshold by remember { mutableFloatStateOf(PostureAnalyzer.cvaThreshold) }
     var tunedSmoothingWindow by remember { mutableIntStateOf(PostureAnalyzer.smoothingWindowSize) }
     var tunedSmoothingEnabled by remember { mutableStateOf(PostureAnalyzer.isSmoothingEnabled) }
 
@@ -282,12 +284,13 @@ fun CalibrationScreen(navController: NavController) {
                         if (PostureAnalyzer.DEV_MODE) {
                             android.util.Log.d(
                                 "CalibrationScreen",
-                                "CVA=${"%.1f".format(metrics.cva)}°, NormCVA=${"%.1f".format(metrics.cvaNormalizedSpace)}°, TargetRange=[${PostureAnalyzer.CVA_MIN.toInt()}°..${PostureAnalyzer.CVA_MAX.toInt()}°], Posture=${metrics.posture}, isCorrect=${metrics.isCorrect}, stableFrames=$stableFrames/$REQUIRED_STABLE_FRAMES"
+                                "CVA=${"%.1f".format(metrics.cva)}°, NormCVA=${"%.1f".format(metrics.cvaNormalizedSpace)}°, Threshold=${PostureAnalyzer.cvaThreshold.toInt()}°, Posture=${metrics.posture}, isCorrect=${metrics.isCorrect}, stableFrames=$stableFrames/$REQUIRED_STABLE_FRAMES"
                             )
                         }
 
                         // Only increment stable frames when posture quality passes ALL gates (CVA, lateral tilt, alignment)
-                        stableFrames = if (metrics.isCorrect) stableFrames + 1 else 0
+                        val canCalibrate = PostureAnalyzer.canCalibrate(metrics.cva)
+                        stableFrames = if (metrics.isCorrect && canCalibrate) stableFrames + 1 else 0
 
                         val isCurrentlyGood = PostureAnalyzer.isGoodPosture(metrics.cva)
                         if (isCurrentlyGood) {
@@ -398,7 +401,7 @@ fun CalibrationScreen(navController: NavController) {
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                "Target: ${PostureAnalyzer.CVA_MIN.toInt()}°–${PostureAnalyzer.CVA_MAX.toInt()}° (Raw: ${cvaValue}°)",
+                                "Target: ≥ ${PostureAnalyzer.cvaThreshold.toInt()}° (Raw: ${cvaValue}°)",
                                 color = NeckWellTextSecondary,
                                 fontSize = 11.sp
                             )
@@ -485,7 +488,7 @@ fun CalibrationScreen(navController: NavController) {
                                     fontWeight = FontWeight.ExtraBold
                                 )
                                 Text(
-                                    "Target Band: ${PostureAnalyzer.CVA_MIN.toInt()}°–${PostureAnalyzer.CVA_MAX.toInt()}°  •  Posture: ${capturedMetrics?.posture ?: PostureAnalyzer.classifyPosture(capturedRawCva)}",
+                                    "Threshold: ≥ ${PostureAnalyzer.cvaThreshold.toInt()}°  •  Posture: ${capturedMetrics?.posture ?: PostureAnalyzer.classifyPosture(capturedRawCva)}",
                                     color = if (PostureAnalyzer.isGoodPosture(capturedRawCva)) NeckWellAccent else AlertCoral,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
@@ -722,6 +725,12 @@ fun CalibrationScreen(navController: NavController) {
                         )
                         Row {
                             TextButton(
+                                onClick = { showValidationDialog = true },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text("Log Validation", fontSize = 11.sp, color = NeckWellAccent)
+                            }
+                            TextButton(
                                 onClick = {
                                     if (isLiveSessionRecording) {
                                         val summary = CalibrationLogger.LiveSessionRecorder.stopSession()
@@ -835,6 +844,31 @@ fun CalibrationScreen(navController: NavController) {
                                     }
                                 }
 
+                                // CVA Threshold Tuning
+                                Spacer(Modifier.height(4.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                    Text("CVA Threshold: ${tunedCvaThreshold.toInt()}°", fontSize = 11.sp, color = NeckWellTextPrimary)
+                                    Row {
+                                        Button(
+                                            onClick = {
+                                                tunedCvaThreshold = (tunedCvaThreshold - 1f).coerceIn(PostureAnalyzer.CVA_THRESHOLD_MIN, PostureAnalyzer.CVA_THRESHOLD_MAX)
+                                                PostureAnalyzer.cvaThreshold = tunedCvaThreshold
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                            modifier = Modifier.height(26.dp)
+                                        ) { Text("-", fontSize = 12.sp) }
+                                        Spacer(Modifier.width(4.dp))
+                                        Button(
+                                            onClick = {
+                                                tunedCvaThreshold = (tunedCvaThreshold + 1f).coerceIn(PostureAnalyzer.CVA_THRESHOLD_MIN, PostureAnalyzer.CVA_THRESHOLD_MAX)
+                                                PostureAnalyzer.cvaThreshold = tunedCvaThreshold
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                            modifier = Modifier.height(26.dp)
+                                        ) { Text("+", fontSize = 12.sp) }
+                                    }
+                                }
+
                                 // Smoothing Window Size
                                 Spacer(Modifier.height(4.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
@@ -883,6 +917,7 @@ fun CalibrationScreen(navController: NavController) {
                                             tunedC7Ky = PostureAnalyzer.c7KyNeck
                                             tunedC7Kx = PostureAnalyzer.c7KxNeck
                                             tunedTragusAnt = PostureAnalyzer.tragusAnteriorRatio
+                                            tunedCvaThreshold = PostureAnalyzer.cvaThreshold
                                             tunedSmoothingWindow = PostureAnalyzer.smoothingWindowSize
                                             tunedSmoothingEnabled = PostureAnalyzer.isSmoothingEnabled
                                         },
@@ -979,7 +1014,7 @@ fun CalibrationScreen(navController: NavController) {
                             color = if (PostureAnalyzer.isGoodPosture(s.meanCva)) NeckWellAccent else AlertCoral
                         )
                         Text("CVA Range: ${"%.1f".format(s.minCva)}° – ${"%.1f".format(s.maxCva)}°")
-                        Text("Frames in Good Posture (48°–50°): ${"%.1f".format(s.goodPosturePercentage)}%")
+                        Text("Frames in Good Posture (≥ ${PostureAnalyzer.cvaThreshold.toInt()}°): ${"%.1f".format(s.goodPosturePercentage)}%")
                         Text("Avg Landmark Jitter: Tragus ${"%.2f".format(s.avgTragusJitterPx)}px, C7 ${"%.2f".format(s.avgC7JitterPx)}px")
                         Spacer(Modifier.height(8.dp))
                         Text("Saved CSV:\n${s.sessionFile.name}", fontSize = 11.sp, color = NeckWellTextSecondary)
@@ -988,6 +1023,50 @@ fun CalibrationScreen(navController: NavController) {
                 confirmButton = {
                     Button(onClick = { showSessionDialog = false }) {
                         Text("Done")
+                    }
+                }
+            )
+        }
+
+        if (showValidationDialog) {
+            var goniometerInput by remember { mutableStateOf("") }
+            AlertDialog(
+                onDismissRequest = { showValidationDialog = false },
+                containerColor = NeckWellSurfaceBright,
+                title = { Text("Log Validation Data", color = NeckWellTextPrimary) },
+                text = {
+                    Column {
+                        Text("Enter true Goniometer CVA (°):", color = NeckWellTextPrimary)
+                        androidx.compose.material3.OutlinedTextField(
+                            value = goniometerInput,
+                            onValueChange = { goniometerInput = it },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        val curMetrics = liveMetrics
+                        if (curMetrics != null) {
+                            Text("Current App CVA: ${"%.1f".format(curMetrics.cva)}°", color = NeckWellTextMuted)
+                        } else {
+                            Text("No live metrics detected.", color = AlertCoral)
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        val gCva = goniometerInput.toFloatOrNull()
+                        val m = liveMetrics
+                        if (gCva != null && m != null) {
+                            val w = Math.abs(m.shoulderXPx - m.tragusXPx) * 1.5f
+                            CalibrationLogger.logValidationCaptureToCsv(context, m, gCva, shoulderWidth = w, hipMidY = m.shoulderYPx + 200f)
+                        }
+                        showValidationDialog = false
+                    }) {
+                        Text("Save Log")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showValidationDialog = false }) {
+                        Text("Cancel", color = NeckWellTextMuted)
                     }
                 }
             )

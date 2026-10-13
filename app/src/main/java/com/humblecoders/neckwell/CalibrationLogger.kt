@@ -261,7 +261,7 @@ object CalibrationLogger {
                     style = android.graphics.Paint.Style.FILL
                 }
                 canvas.drawRect(0f, 0f, imgW, paintText.textSize * 3.8f, bannerPaint)
-                canvas.drawText("CVA: ${"%.1f".format(metrics.cva)}°  |  Target: [${PostureAnalyzer.CVA_MIN.toInt()}°–${PostureAnalyzer.CVA_MAX.toInt()}°]  |  Anatomical Tragus & C7", 20f, paintText.textSize * 1.3f, paintText)
+                canvas.drawText("CVA: ${"%.1f".format(metrics.cva)}°  |  Threshold: ≥ ${PostureAnalyzer.cvaThreshold.toInt()}°  |  Anatomical Tragus & C7", 20f, paintText.textSize * 1.3f, paintText)
                 val bannerLine2 = if (errorMetrics != null) {
                     "Tragus: (${metrics.tragusXPx.toInt()}, ${metrics.tragusYPx.toInt()}) [Δ${"%.1f".format(errorMetrics.tragusPixelError)}px]  |  C7: (${metrics.c7XPx.toInt()}, ${metrics.c7YPx.toInt()}) [Δ${"%.1f".format(errorMetrics.c7PixelError)}px]"
                 } else {
@@ -397,6 +397,40 @@ object CalibrationLogger {
                 "jitter=[T:${"%.1f".format(Locale.US, metrics.jitterTragusPx)}px, C7:${"%.1f".format(Locale.US, metrics.jitterC7Px)}px] | " +
                 "Posture=${metrics.posture} (isCorrect=${metrics.isCorrect})"
         )
+    }
+
+    /**
+     * Logs a Goniometer-validated reference capture for C7 least-squares fitting.
+     */
+    fun logValidationCaptureToCsv(
+        context: Context,
+        metrics: PostureMetrics,
+        goniometerCva: Float,
+        shoulderWidth: Float,
+        hipMidY: Float
+    ) {
+        val fileName = "validation_captures.csv"
+        val file = File(context.getExternalFilesDir(null), fileName)
+        val isNew = !file.exists()
+        
+        try {
+            val writer = java.io.FileWriter(file, true)
+            if (isNew) {
+                writer.append("Timestamp,EarX,EarY,ShoulderMidX,ShoulderMidY,ShoulderWidth,HipMidY,AppCVA,GoniometerCVA\\n")
+            }
+            
+            // Note: TragusX/Y in PostureMetrics are in pixel space, but we want normalized [0..1] coordinates for the formula.
+            // In PostureMetrics we only have raw image pixels. 
+            // We'll log raw pixel coordinates and shoulder width in pixels.
+            val ts = System.currentTimeMillis()
+            writer.append("$ts,${metrics.tragusXPx},${metrics.tragusYPx},${metrics.shoulderXPx},${metrics.shoulderYPx},$shoulderWidth,$hipMidY,${metrics.cva},$goniometerCva\\n")
+            
+            writer.flush()
+            writer.close()
+            Log.i("CVA_VALIDATION", "Logged validation capture to ${file.absolutePath}")
+        } catch (e: Exception) {
+            Log.e("CVA_VALIDATION", "Failed to log validation capture", e)
+        }
     }
 
     /**

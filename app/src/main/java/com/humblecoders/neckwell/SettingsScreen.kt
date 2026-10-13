@@ -27,6 +27,8 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -91,6 +93,7 @@ fun SettingsScreen(navController: NavController) {
     val notificationsEnabled by NeckWellPreferences.notificationsEnabled.collectAsState()
     val hapticFeedback by NeckWellPreferences.hapticFeedbackEnabled.collectAsState()
     val soundAlerts by NeckWellPreferences.soundAlertsEnabled.collectAsState()
+    val cvaThreshold by NeckWellPreferences.cvaThreshold.collectAsState()
     val deviceStatus by DeviceStatusManager.deviceStatus.collectAsState()
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -222,6 +225,17 @@ fun SettingsScreen(navController: NavController) {
                 ) {
                     navController.navigate("calibration")
                 }
+
+                SettingsSliderItem(
+                    icon = Icons.Outlined.Tune,
+                    title = "Good posture threshold",
+                    description = "Minimum CVA required for good posture: ${cvaThreshold.toInt()}°",
+                    value = cvaThreshold,
+                    valueRange = PostureAnalyzer.CVA_THRESHOLD_MIN..PostureAnalyzer.CVA_THRESHOLD_MAX,
+                    onValueChange = { newValue ->
+                        NeckWellPreferences.setCvaThreshold(context, newValue)
+                    }
+                )
             }
 
             SettingsSection("About") {
@@ -374,6 +388,56 @@ private fun SettingsClickableItem(
                 Text(description, color = NeckWellTextSecondary, style = MaterialTheme.typography.bodyMedium)
             }
             Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = NeckWellTextSecondary, modifier = Modifier.size(21.dp))
+        }
+    }
+}
+
+@Composable
+private fun SettingsSliderItem(
+    icon: ImageVector,
+    title: String,
+    description: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int = 11,
+    onValueChange: (Float) -> Unit
+) {
+    NeckWellCard {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                IconTile(icon, NeckWellAccent, background = NeckWellAccentSurface, size = 44)
+                Spacer(Modifier.width(13.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(title, color = NeckWellTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text(description, color = NeckWellTextSecondary, style = MaterialTheme.typography.bodyMedium)
+                }
+                Text(
+                    "${value.toInt()}°",
+                    color = NeckWellAccent,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Slider(
+                value = value.coerceIn(valueRange.start, valueRange.endInclusive),
+                onValueChange = { onValueChange(it.coerceIn(valueRange.start, valueRange.endInclusive)) },
+                valueRange = valueRange,
+                steps = steps,
+                colors = SliderDefaults.colors(
+                    thumbColor = NeckWellAccent,
+                    activeTrackColor = NeckWellAccent,
+                    inactiveTrackColor = NeckWellBorder
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }

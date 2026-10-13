@@ -142,9 +142,10 @@ class CvaComputationTest {
         )
 
         assertEquals(41.5f, metrics.cva, 0.2f)
-        assertFalse("Expected CVA < 48° to be classified as incorrect", metrics.isCorrect)
+        assertFalse("Expected CVA < active threshold to be classified as incorrect", metrics.isCorrect)
         assertEquals("Poor", metrics.posture)
         assertTrue(metrics.reason.contains("Sit straight"))
+        assertFalse(PostureAnalyzer.canCalibrate(metrics.cva))
     }
 
     @Test
@@ -166,15 +167,19 @@ class CvaComputationTest {
         assertEquals(49.0f, metrics.cvaPixelSpace, 0.1f)
         // Vertical angle = 90° - 49° = 41.0°
         assertEquals(41.0f, metrics.angleWithVertical, 0.1f)
-        assertTrue("Expected 49.0° to be classified as correct within 48°–50° band", metrics.isCorrect)
+        assertTrue("Expected 49.0° to be classified as correct with CVA >= threshold", metrics.isCorrect)
         assertEquals("Good", metrics.posture)
+        assertTrue(PostureAnalyzer.canCalibrate(metrics.cva))
     }
 
     @Test
-    fun testHyperextended64_8DegClassifiedAsPoor() {
+    fun testForwardHeadTiltClassifiedAsPoorAndBlocked() {
+        // CVA = 35.0° (visibly poor forward head tilt)
+        val dxPx = 100f
+        val dyPx = (dxPx * tan(Math.toRadians(35.0))).toFloat()
         val metrics = PostureAnalyzer.computeMetrics(
-            earX = 0.40f,
-            earY = 0.40f - ((100f * tan(Math.toRadians(64.8))).toFloat() / 1000f),
+            earX = 0.50f - (dxPx / 1000f),
+            earY = 0.40f - (dyPx / 1000f),
             earVis = 0.95f,
             shX = 0.50f,
             shY = 0.40f,
@@ -182,10 +187,11 @@ class CvaComputationTest {
             imageWidth = 1000,
             imageHeight = 1000
         )
-        assertEquals(64.8f, metrics.cva, 0.2f)
-        assertFalse("64.8° must be classified as incorrect (> 50°)", metrics.isCorrect)
+        assertEquals(35.0f, metrics.cva, 0.2f)
+        assertFalse("35.0° must be classified as incorrect (< active threshold)", metrics.isCorrect)
         assertEquals("Poor", metrics.posture)
-        assertTrue(metrics.reason.contains("head tilted back"))
+        assertTrue(metrics.reason.contains("Sit straight"))
+        assertFalse(PostureAnalyzer.canCalibrate(metrics.cva))
     }
 
     @Test
