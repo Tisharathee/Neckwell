@@ -93,12 +93,12 @@ object PostureAnalyzer {
     private const val RIGHT_HIP = 24
 
     // Craniovertebral Angle (CVA) threshold bounds and default:
-    const val CVA_THRESHOLD_MIN = 45f
-    const val CVA_THRESHOLD_MAX = 57f
-    const val CVA_THRESHOLD_DEFAULT = 48f
+    const val CVA_THRESHOLD_MIN = 51f
+    const val CVA_THRESHOLD_MAX = 59f
+    const val CVA_THRESHOLD_DEFAULT = 55f
 
     // Active CVA threshold for posture classification (Good posture: CVA >= cvaThreshold)
-    // Clamped strictly to [CVA_THRESHOLD_MIN..CVA_THRESHOLD_MAX] (45°..57°)
+    // Clamped strictly to [CVA_THRESHOLD_MIN..CVA_THRESHOLD_MAX] (51°..59°)
     var cvaThreshold: Float = CVA_THRESHOLD_DEFAULT
         set(value) {
             field = value.coerceIn(CVA_THRESHOLD_MIN, CVA_THRESHOLD_MAX)

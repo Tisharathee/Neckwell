@@ -21,24 +21,24 @@ import kotlin.math.tan
 class CvaComputationTest {
 
     @Test
-    fun testExpected48DegPostureProducesExact48DegPixelCva() {
-        // Known clinical test case: Expected CVA = 48.0°
+    fun testExpected55DegPostureProducesExact55DegPixelCva() {
+        // Known clinical test case: Expected CVA = 55.0°
         // In a 720 x 1280 camera frame:
         val frameWidth = 720
         val frameHeight = 1280
 
         // In physical pixels:
         // C7 is at (300px, 600px)
-        // For CVA = 48.0°: tan(48°) = dy / dx ≈ 1.11061
-        // Let dx = 100px. Then dy = 100 * tan(48°) = 111.061px.
-        // Tragus is higher (smaller Y in screen coords): tragusY = 600 - 111.061 = 488.939px.
+        // For CVA = 55.0°: tan(55°) = dy / dx ≈ 1.42815
+        // Let dx = 100px. Then dy = 100 * tan(55°) ≈ 142.815px.
+        // Tragus is higher (smaller Y in screen coords): tragusY = 600 - 142.815 = 457.185px.
         // Tragus is forward (ear is further left in right profile or right in left profile):
         val c7XPx = 300f
         val c7YPx = 600f
         val dxPx = 100f
-        val dyPx = (dxPx * tan(Math.toRadians(48.0))).toFloat() // ≈ 111.061f
+        val dyPx = (dxPx * tan(Math.toRadians(55.0))).toFloat() // ≈ 142.815f
         val tragusXPx = c7XPx - dxPx // 200f
-        val tragusYPx = c7YPx - dyPx // ≈ 488.939f
+        val tragusYPx = c7YPx - dyPx // ≈ 457.185f
 
         // Convert to MediaPipe normalized coordinates [0.0, 1.0]:
         val normTragusX = tragusXPx / frameWidth
@@ -57,14 +57,14 @@ class CvaComputationTest {
             imageHeight = frameHeight
         )
 
-        // Verify computed CVA in pixel space matches 48.0° clinically
-        assertEquals(48.0f, metrics.cva, 0.1f)
-        assertEquals(48.0f, metrics.cvaPixelSpace, 0.1f)
+        // Verify computed CVA in pixel space matches 55.0° clinically
+        assertEquals(55.0f, metrics.cva, 0.1f)
+        assertEquals(55.0f, metrics.cvaPixelSpace, 0.1f)
 
-        // Verify angle with vertical is 90° - 48° = 42°
-        assertEquals(42.0f, metrics.angleWithVertical, 0.1f)
+        // Verify angle with vertical is 90° - 55° = 35°
+        assertEquals(35.0f, metrics.angleWithVertical, 0.1f)
 
-        // Verify that 48° is classified as Good posture
+        // Verify that 55° is classified as Good posture
         assertTrue(metrics.isCorrect)
         assertEquals("Good", metrics.posture)
 
@@ -122,7 +122,7 @@ class CvaComputationTest {
     }
 
     @Test
-    fun testForwardHeadPostureBelow48DegThreshold() {
+    fun testForwardHeadPostureBelowThreshold() {
         // Forward head posture with true CVA = 41.5° (poor posture)
         val frameW = 1080
         val frameH = 1920
@@ -150,24 +150,24 @@ class CvaComputationTest {
 
     @Test
     fun testHorizontalAngleAndVerticalComplementaryAngle() {
-        // CVA = 49.0° upright neutral
+        // CVA = 56.0° upright neutral
         val metrics = PostureAnalyzer.computeMetrics(
             earX = 0.50f,
             earY = 0.30f,
             earVis = 0.95f,
             shX = 0.50f + (100f / 1000f),
-            shY = 0.30f + ((100f * tan(Math.toRadians(49.0))).toFloat() / 1000f),
+            shY = 0.30f + ((100f * tan(Math.toRadians(56.0))).toFloat() / 1000f),
             shVis = 0.95f,
             imageWidth = 1000,
             imageHeight = 1000
         )
 
-        assertEquals(49.0f, metrics.cva, 0.1f)
-        // Horizontal angle = 49.0°
-        assertEquals(49.0f, metrics.cvaPixelSpace, 0.1f)
-        // Vertical angle = 90° - 49° = 41.0°
-        assertEquals(41.0f, metrics.angleWithVertical, 0.1f)
-        assertTrue("Expected 49.0° to be classified as correct with CVA >= threshold", metrics.isCorrect)
+        assertEquals(56.0f, metrics.cva, 0.1f)
+        // Horizontal angle = 56.0°
+        assertEquals(56.0f, metrics.cvaPixelSpace, 0.1f)
+        // Vertical angle = 90° - 56° = 34.0°
+        assertEquals(34.0f, metrics.angleWithVertical, 0.1f)
+        assertTrue("Expected 56.0° to be classified as correct with CVA >= threshold", metrics.isCorrect)
         assertEquals("Good", metrics.posture)
         assertTrue(PostureAnalyzer.canCalibrate(metrics.cva))
     }

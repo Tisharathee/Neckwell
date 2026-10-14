@@ -142,10 +142,10 @@ fun CalibrationScreen(navController: NavController) {
     var isClinicalRefActive by remember { mutableStateOf(false) }
     var showClinicalInputs by remember { mutableStateOf(false) }
     var refTragusXText by remember { mutableStateOf("154.0") }
-    var refTragusYText by remember { mutableStateOf("248.0") }
+    var refTragusYText by remember { mutableStateOf("230.0") }
     var refC7XText by remember { mutableStateOf("212.0") }
     var refC7YText by remember { mutableStateOf("313.0") }
-    var refCvaText by remember { mutableStateOf("48.8") }
+    var refCvaText by remember { mutableStateOf("55.0") }
 
     val clinicalReference: ClinicalReference? = remember(
         isClinicalRefActive,
@@ -692,10 +692,10 @@ fun CalibrationScreen(navController: NavController) {
                                     Button(
                                         onClick = {
                                             refTragusXText = "154.0"
-                                            refTragusYText = "248.0"
+                                            refTragusYText = "230.0"
                                             refC7XText = "212.0"
                                             refC7YText = "313.0"
-                                            refCvaText = "48.8"
+                                            refCvaText = "55.0"
                                             isClinicalRefActive = true
                                         },
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)

@@ -232,6 +232,7 @@ fun SettingsScreen(navController: NavController) {
                     description = "Minimum CVA required for good posture: ${cvaThreshold.toInt()}°",
                     value = cvaThreshold,
                     valueRange = PostureAnalyzer.CVA_THRESHOLD_MIN..PostureAnalyzer.CVA_THRESHOLD_MAX,
+                    steps = (PostureAnalyzer.CVA_THRESHOLD_MAX - PostureAnalyzer.CVA_THRESHOLD_MIN).toInt() - 1,
                     onValueChange = { newValue ->
                         NeckWellPreferences.setCvaThreshold(context, newValue)
                     }
@@ -399,7 +400,7 @@ private fun SettingsSliderItem(
     description: String,
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
-    steps: Int = 11,
+    steps: Int = 7,
     onValueChange: (Float) -> Unit
 ) {
     NeckWellCard {

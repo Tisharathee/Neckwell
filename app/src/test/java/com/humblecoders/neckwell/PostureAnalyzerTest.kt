@@ -11,10 +11,10 @@ class PostureAnalyzerTest {
     @Test
     fun testClearlyGoodUprightPostureAboveThreshold() {
         PostureAnalyzer.cvaThreshold = PostureAnalyzer.CVA_THRESHOLD_DEFAULT
-        // CVA = 49.0° (>= 48.0° active threshold)
-        // tan(49°) ≈ 1.15037. Let dx = 0.10, dy = 0.11504
+        // CVA = 56.0° (>= 55.0° active threshold)
+        // tan(56°) ≈ 1.48256. Let dx = 0.10, dy = 0.14826
         val dx = 0.10f
-        val dy = (dx * tan(Math.toRadians(49.0))).toFloat() // ≈ 0.115037f
+        val dy = (dx * tan(Math.toRadians(56.0))).toFloat() // ≈ 0.148256f
         val shX = 0.50f
         val shY = 0.40f
         val earX = shX - dx // 0.40f
@@ -39,9 +39,9 @@ class PostureAnalyzerTest {
     }
 
     @Test
-    fun testClearlyBadForwardHeadPostureBelow48() {
+    fun testClearlyBadForwardHeadPostureBelowThreshold() {
         // Forward head posture: ear pushed forward horizontally (dx=0.25, dy=0.10)
-        // CVA = atan2(0.10, 0.25) ≈ 21.8° (< 48°)
+        // CVA = atan2(0.10, 0.25) ≈ 21.8° (< 55°)
         val metrics = PostureAnalyzer.computeMetrics(
             earX = 0.25f,
             earY = 0.35f,
@@ -122,96 +122,100 @@ class PostureAnalyzerTest {
 
     @Test
     fun testPostureClassificationAndHelpers() {
-        PostureAnalyzer.cvaThreshold = PostureAnalyzer.CVA_THRESHOLD_DEFAULT // 48f
+        PostureAnalyzer.cvaThreshold = PostureAnalyzer.CVA_THRESHOLD_DEFAULT // 55f
 
-        assertEquals("Good", PostureAnalyzer.classifyPosture(48f))
-        assertEquals("Good", PostureAnalyzer.classifyPosture(49f))
-        assertEquals("Good", PostureAnalyzer.classifyPosture(50f))
         assertEquals("Good", PostureAnalyzer.classifyPosture(55f))
+        assertEquals("Good", PostureAnalyzer.classifyPosture(56f))
         assertEquals("Good", PostureAnalyzer.classifyPosture(57f))
+        assertEquals("Good", PostureAnalyzer.classifyPosture(58f))
+        assertEquals("Good", PostureAnalyzer.classifyPosture(59f))
 
-        // Values below threshold (48°) MUST be Poor
-        assertEquals("Poor", PostureAnalyzer.classifyPosture(47.9f))
-        assertEquals("Poor", PostureAnalyzer.classifyPosture(45f))
+        // Values below threshold (55°) MUST be Poor
+        assertEquals("Poor", PostureAnalyzer.classifyPosture(54.9f))
+        assertEquals("Poor", PostureAnalyzer.classifyPosture(51f))
+        assertEquals("Poor", PostureAnalyzer.classifyPosture(48f))
         assertEquals("Poor", PostureAnalyzer.classifyPosture(25f))
 
         // isGoodPosture helper
-        assertTrue(PostureAnalyzer.isGoodPosture(48f))
-        assertTrue(PostureAnalyzer.isGoodPosture(49f))
-        assertTrue(PostureAnalyzer.isGoodPosture(50f))
         assertTrue(PostureAnalyzer.isGoodPosture(55f))
-        assertFalse(PostureAnalyzer.isGoodPosture(47.9f))
+        assertTrue(PostureAnalyzer.isGoodPosture(56f))
+        assertTrue(PostureAnalyzer.isGoodPosture(57f))
+        assertTrue(PostureAnalyzer.isGoodPosture(59f))
+        assertFalse(PostureAnalyzer.isGoodPosture(54.9f))
+        assertFalse(PostureAnalyzer.isGoodPosture(48f))
         assertFalse(PostureAnalyzer.isGoodPosture(25f))
 
         // isPoorPosture helper
-        assertFalse(PostureAnalyzer.isPoorPosture(48f))
-        assertFalse(PostureAnalyzer.isPoorPosture(49f))
-        assertFalse(PostureAnalyzer.isPoorPosture(50f))
-        assertTrue(PostureAnalyzer.isPoorPosture(47.9f))
+        assertFalse(PostureAnalyzer.isPoorPosture(55f))
+        assertFalse(PostureAnalyzer.isPoorPosture(56f))
+        assertFalse(PostureAnalyzer.isPoorPosture(59f))
+        assertTrue(PostureAnalyzer.isPoorPosture(54.9f))
+        assertTrue(PostureAnalyzer.isPoorPosture(48f))
         assertTrue(PostureAnalyzer.isPoorPosture(25f))
 
         // Calibration-block check uses same threshold
-        assertTrue(PostureAnalyzer.canCalibrate(48f))
-        assertTrue(PostureAnalyzer.canCalibrate(50f))
-        assertFalse(PostureAnalyzer.canCalibrate(47.9f))
+        assertTrue(PostureAnalyzer.canCalibrate(55f))
+        assertTrue(PostureAnalyzer.canCalibrate(59f))
+        assertFalse(PostureAnalyzer.canCalibrate(54.9f))
+        assertFalse(PostureAnalyzer.canCalibrate(48f))
         assertFalse(PostureAnalyzer.canCalibrate(25f))
     }
 
     @Test
-    fun testThresholdClampingTo45Through57() {
-        // Below MIN (45f) must be clamped to 45f
+    fun testThresholdClampingTo51Through59() {
+        // Below MIN (51f) must be clamped to 51f
         PostureAnalyzer.cvaThreshold = 40f
-        assertEquals(45f, PostureAnalyzer.cvaThreshold, 0.001f)
+        assertEquals(51f, PostureAnalyzer.cvaThreshold, 0.001f)
         assertEquals(PostureAnalyzer.CVA_THRESHOLD_MIN, PostureAnalyzer.cvaThreshold, 0.001f)
 
         PostureAnalyzer.cvaThreshold = -10f
-        assertEquals(45f, PostureAnalyzer.cvaThreshold, 0.001f)
+        assertEquals(51f, PostureAnalyzer.cvaThreshold, 0.001f)
 
-        // Above MAX (57f) must be clamped to 57f
+        // Above MAX (59f) must be clamped to 59f
         PostureAnalyzer.cvaThreshold = 65f
-        assertEquals(57f, PostureAnalyzer.cvaThreshold, 0.001f)
+        assertEquals(59f, PostureAnalyzer.cvaThreshold, 0.001f)
         assertEquals(PostureAnalyzer.CVA_THRESHOLD_MAX, PostureAnalyzer.cvaThreshold, 0.001f)
 
         PostureAnalyzer.cvaThreshold = 100f
-        assertEquals(57f, PostureAnalyzer.cvaThreshold, 0.001f)
+        assertEquals(59f, PostureAnalyzer.cvaThreshold, 0.001f)
 
-        // Valid values within 45f..57f are preserved
-        PostureAnalyzer.cvaThreshold = 52f
-        assertEquals(52f, PostureAnalyzer.cvaThreshold, 0.001f)
+        // Valid values within 51f..59f are preserved
+        PostureAnalyzer.cvaThreshold = 55f
+        assertEquals(55f, PostureAnalyzer.cvaThreshold, 0.001f)
 
-        PostureAnalyzer.cvaThreshold = 45f
-        assertEquals(45f, PostureAnalyzer.cvaThreshold, 0.001f)
+        PostureAnalyzer.cvaThreshold = 51f
+        assertEquals(51f, PostureAnalyzer.cvaThreshold, 0.001f)
 
-        PostureAnalyzer.cvaThreshold = 57f
-        assertEquals(57f, PostureAnalyzer.cvaThreshold, 0.001f)
+        PostureAnalyzer.cvaThreshold = 59f
+        assertEquals(59f, PostureAnalyzer.cvaThreshold, 0.001f)
 
         // Reset to default
         PostureAnalyzer.cvaThreshold = PostureAnalyzer.CVA_THRESHOLD_DEFAULT
-        assertEquals(48f, PostureAnalyzer.cvaThreshold, 0.001f)
+        assertEquals(55f, PostureAnalyzer.cvaThreshold, 0.001f)
     }
 
     @Test
     fun testClassificationAndCalibrationWithAdjustedThreshold() {
-        // Threshold adjusted to lower bound (45°)
-        PostureAnalyzer.cvaThreshold = 45f
-        assertEquals("Good", PostureAnalyzer.classifyPosture(45f))
-        assertEquals("Poor", PostureAnalyzer.classifyPosture(44.9f))
-        assertTrue(PostureAnalyzer.canCalibrate(45f))
-        assertFalse(PostureAnalyzer.canCalibrate(44.9f))
+        // Threshold adjusted to lower bound (51°)
+        PostureAnalyzer.cvaThreshold = 51f
+        assertEquals("Good", PostureAnalyzer.classifyPosture(51f))
+        assertEquals("Poor", PostureAnalyzer.classifyPosture(50.9f))
+        assertTrue(PostureAnalyzer.canCalibrate(51f))
+        assertFalse(PostureAnalyzer.canCalibrate(50.9f))
 
-        // Threshold adjusted to upper bound (57°)
-        PostureAnalyzer.cvaThreshold = 57f
-        assertEquals("Good", PostureAnalyzer.classifyPosture(57f))
-        assertEquals("Poor", PostureAnalyzer.classifyPosture(56.9f))
-        assertTrue(PostureAnalyzer.canCalibrate(57f))
-        assertFalse(PostureAnalyzer.canCalibrate(56.9f))
+        // Threshold adjusted to upper bound (59°)
+        PostureAnalyzer.cvaThreshold = 59f
+        assertEquals("Good", PostureAnalyzer.classifyPosture(59f))
+        assertEquals("Poor", PostureAnalyzer.classifyPosture(58.9f))
+        assertTrue(PostureAnalyzer.canCalibrate(59f))
+        assertFalse(PostureAnalyzer.canCalibrate(58.9f))
 
-        // Threshold adjusted to 50°
-        PostureAnalyzer.cvaThreshold = 50f
-        assertEquals("Good", PostureAnalyzer.classifyPosture(50f))
-        assertEquals("Poor", PostureAnalyzer.classifyPosture(49.9f))
-        assertTrue(PostureAnalyzer.canCalibrate(50f))
-        assertFalse(PostureAnalyzer.canCalibrate(49.9f))
+        // Threshold adjusted to 55°
+        PostureAnalyzer.cvaThreshold = 55f
+        assertEquals("Good", PostureAnalyzer.classifyPosture(55f))
+        assertEquals("Poor", PostureAnalyzer.classifyPosture(54.9f))
+        assertTrue(PostureAnalyzer.canCalibrate(55f))
+        assertFalse(PostureAnalyzer.canCalibrate(54.9f))
 
         // Reset
         PostureAnalyzer.cvaThreshold = PostureAnalyzer.CVA_THRESHOLD_DEFAULT
@@ -411,12 +415,12 @@ class PostureAnalyzerTest {
 
         // 3 Distinct body builds in upright neutral posture:
         val subjects = listOf(
-            // 1. Average adult build: dy = 65.5px, dx = 57.5px -> atan2(65.5, 57.5) = 48.7°
-            SubjectProfile("Average Build", 154.5f, 248.0f, 212.0f, 313.5f),
-            // 2. Slender / Long-neck build: dy = 69.0px, dx = 60.5px -> atan2(69.0, 60.5) = 48.75°
-            SubjectProfile("Slender / Long Neck", 140.0f, 220.0f, 200.5f, 289.0f),
-            // 3. Stocky / Broad build: dy = 61.0px, dx = 54.0px -> atan2(61.0, 54.0) = 48.48°
-            SubjectProfile("Stocky / Broad Build", 165.0f, 270.0f, 219.0f, 331.0f)
+            // 1. Average adult build: dy = 72.75px, dx = 50.0px -> atan2(72.75, 50.0) = 55.5°
+            SubjectProfile("Average Build", 162.0f, 240.75f, 212.0f, 313.5f),
+            // 2. Slender / Long-neck build: dy = 73.0px, dx = 50.0px -> atan2(73.0, 50.0) = 55.6°
+            SubjectProfile("Slender / Long Neck", 150.5f, 216.0f, 200.5f, 289.0f),
+            // 3. Stocky / Broad build: dy = 72.5px, dx = 50.0px -> atan2(72.5, 50.0) = 55.4°
+            SubjectProfile("Stocky / Broad Build", 169.0f, 258.5f, 219.0f, 331.0f)
         )
 
         println("=== Multi-Subject Anatomical Body Profile Verification ===")
