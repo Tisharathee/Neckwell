@@ -286,12 +286,13 @@
     <div class="eq-math">
       $$\text{Posture}(\theta_{\text{CVA}}, \Delta x) = 
       \begin{cases} 
-        \text{"Good"} & \text{if } \theta_{\text{CVA}} \ge \theta_{\text{thresh}} \;\land\; \Delta x \le 0.16 \\ 
-        \text{"Poor"} & \text{if } \theta_{\text{CVA}} < \theta_{\text{thresh}} \;\lor\; \Delta x > 0.16 
+        \text{"Good posture"} & \text{if } 51.0^\circ \le \theta_{\text{CVA}} \le 59.0^\circ \;\land\; \Delta x \le 0.16 \\ 
+        \text{"Poor posture (head too far forward)"} & \text{if } \theta_{\text{CVA}} < 51.0^\circ \;\lor\; \Delta x > 0.16 \\
+        \text{"Out of range, retake"} & \text{if } \theta_{\text{CVA}} > 59.0^\circ
       \end{cases}$$
     </div>
     <div class="eq-desc">
-      $\theta_{\text{thresh}} = 55.0^\circ$ (default, configurable in range $[51.0^\circ, 59.0^\circ]$) is the clinical Craniovertebral Angle threshold for neutral upright cervical alignment. Angles $< \theta_{\text{thresh}}$ indicate Forward Head Posture (FHP). $\Delta x \le 0.16$ prevents excessive anterior translation.
+      $[51.0^\circ, 59.0^\circ]$ is the clinical Craniovertebral Angle acceptance band for neutral upright cervical alignment. Angles $< 51.0^\circ$ indicate Forward Head Posture (FHP), while angles $> 59.0^\circ$ are out of range and rejected. $\Delta x \le 0.16$ prevents excessive anterior translation.
     </div>
   </div>
 
@@ -482,9 +483,9 @@
     </thead>
     <tbody>
       <tr>
-        <td><code>CVA_THRESHOLD</code> ($\theta_{\text{CVA}}$)</td>
-        <td>$55.0^\circ$ ($51.0^\circ - 59.0^\circ$)</td>
-        <td>Clinical Craniovertebral Angle threshold for neutral upright posture (Good: CVA $\ge 55.0^\circ$).</td>
+        <td><code>CVA_GOOD_MIN</code> .. <code>CVA_GOOD_MAX</code></td>
+        <td>$51.0^\circ - 59.0^\circ$</td>
+        <td>Clinical Craniovertebral Angle acceptance band for neutral upright posture (Good: $51.0^\circ \le \text{CVA} \le 59.0^\circ$).</td>
       </tr>
       <tr>
         <td><code>k_ant</code>, <code>k_inf</code> (Tragus derivation)</td>

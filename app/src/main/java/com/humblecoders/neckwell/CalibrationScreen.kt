@@ -117,7 +117,6 @@ fun CalibrationScreen(navController: NavController) {
     var tunedC7Ky by remember { mutableFloatStateOf(PostureAnalyzer.c7KyNeck) }
     var tunedC7Kx by remember { mutableFloatStateOf(PostureAnalyzer.c7KxNeck) }
     var tunedTragusAnt by remember { mutableFloatStateOf(PostureAnalyzer.tragusAnteriorRatio) }
-    var tunedCvaThreshold by remember { mutableFloatStateOf(PostureAnalyzer.cvaThreshold) }
     var tunedSmoothingWindow by remember { mutableIntStateOf(PostureAnalyzer.smoothingWindowSize) }
     var tunedSmoothingEnabled by remember { mutableStateOf(PostureAnalyzer.isSmoothingEnabled) }
 
@@ -276,6 +275,17 @@ fun CalibrationScreen(navController: NavController) {
                         cvaValue = 0f
                         lateralTiltValue = 0f
                         stableFrames = 0
+                    } else if (metrics.cva < PostureAnalyzer.CVA_GOOD_MIN || metrics.cva > PostureAnalyzer.CVA_GOOD_MAX) {
+                        statusText = if (metrics.cva > PostureAnalyzer.CVA_GOOD_MAX) {
+                            "CVA ${"%.1f".format(metrics.cva)}° is outside the 51-59° range. Adjust posture and retake."
+                        } else {
+                            "Poor posture (head too far forward) — CVA: ${"%.1f".format(metrics.cva)}° is outside the 51-59° range."
+                        }
+                        cvaValue = metrics.cva
+                        lateralTiltValue = metrics.lateralTilt
+                        stableFrames = 0
+                        goodPostureHoldStart = 0L
+                        hasTriggeredGoodPostureBeep = false
                     } else {
                         statusText = metrics.reason
                         cvaValue = metrics.cva
@@ -284,11 +294,11 @@ fun CalibrationScreen(navController: NavController) {
                         if (PostureAnalyzer.DEV_MODE) {
                             android.util.Log.d(
                                 "CalibrationScreen",
-                                "CVA=${"%.1f".format(metrics.cva)}°, NormCVA=${"%.1f".format(metrics.cvaNormalizedSpace)}°, Threshold=${PostureAnalyzer.cvaThreshold.toInt()}°, Posture=${metrics.posture}, isCorrect=${metrics.isCorrect}, hasValidLandmarks=${metrics.hasValidLandmarks}, stableFrames=$stableFrames/$REQUIRED_STABLE_FRAMES"
+                                "CVA=${"%.1f".format(metrics.cva)}°, NormCVA=${"%.1f".format(metrics.cvaNormalizedSpace)}°, Band=[${PostureAnalyzer.CVA_GOOD_MIN.toInt()}°..${PostureAnalyzer.CVA_GOOD_MAX.toInt()}°], Posture=${metrics.posture}, isCorrect=${metrics.isCorrect}, hasValidLandmarks=${metrics.hasValidLandmarks}, stableFrames=$stableFrames/$REQUIRED_STABLE_FRAMES"
                             )
                         }
 
-                        // Only increment stable frames when posture quality passes ALL gates (valid landmarks, plausible CVA, threshold, lateral tilt, alignment)
+                        // Only increment stable frames when posture quality passes ALL gates (valid landmarks, plausible CVA, 51<=CVA<=59, lateral tilt, alignment)
                         val canCalibrate = PostureAnalyzer.canCalibrate(metrics)
                         stableFrames = if (metrics.isCorrect && canCalibrate) stableFrames + 1 else 0
 
@@ -309,7 +319,7 @@ fun CalibrationScreen(navController: NavController) {
                             hasTriggeredGoodPostureBeep = false
                         }
 
-                        if (stableFrames >= REQUIRED_STABLE_FRAMES) {
+                        if (stableFrames >= REQUIRED_STABLE_FRAMES && PostureAnalyzer.isGoodPosture(metrics.cva) && metrics.hasValidLandmarks) {
                             calibrationTriggered = true
                             capturedRawCva = metrics.cva
                             capturedLateralTilt = metrics.lateralTilt
@@ -401,7 +411,7 @@ fun CalibrationScreen(navController: NavController) {
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                "Target: ≥ ${PostureAnalyzer.cvaThreshold.toInt()}° (Raw: ${cvaValue}°)",
+                                "Good range: ${PostureAnalyzer.CVA_GOOD_MIN.toInt()}°–${PostureAnalyzer.CVA_GOOD_MAX.toInt()}° (Raw: ${"%.1f".format(cvaValue)}°)",
                                 color = NeckWellTextSecondary,
                                 fontSize = 11.sp
                             )
@@ -488,7 +498,7 @@ fun CalibrationScreen(navController: NavController) {
                                     fontWeight = FontWeight.ExtraBold
                                 )
                                 Text(
-                                    "Threshold: ≥ ${PostureAnalyzer.cvaThreshold.toInt()}°  •  Posture: ${capturedMetrics?.posture ?: PostureAnalyzer.classifyPosture(capturedRawCva)}",
+                                    "Good range: ${PostureAnalyzer.CVA_GOOD_MIN.toInt()}°–${PostureAnalyzer.CVA_GOOD_MAX.toInt()}°  •  Posture: ${capturedMetrics?.posture ?: PostureAnalyzer.classifyPosture(capturedRawCva)}",
                                     color = if (PostureAnalyzer.isGoodPosture(capturedRawCva)) NeckWellAccent else AlertCoral,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
@@ -844,29 +854,11 @@ fun CalibrationScreen(navController: NavController) {
                                     }
                                 }
 
-                                // CVA Threshold Tuning
+                                // Good Posture CVA Band
                                 Spacer(Modifier.height(4.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                                    Text("CVA Threshold: ${tunedCvaThreshold.toInt()}°", fontSize = 11.sp, color = NeckWellTextPrimary)
-                                    Row {
-                                        Button(
-                                            onClick = {
-                                                tunedCvaThreshold = (tunedCvaThreshold - 1f).coerceIn(PostureAnalyzer.CVA_THRESHOLD_MIN, PostureAnalyzer.CVA_THRESHOLD_MAX)
-                                                PostureAnalyzer.cvaThreshold = tunedCvaThreshold
-                                            },
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                            modifier = Modifier.height(26.dp)
-                                        ) { Text("-", fontSize = 12.sp) }
-                                        Spacer(Modifier.width(4.dp))
-                                        Button(
-                                            onClick = {
-                                                tunedCvaThreshold = (tunedCvaThreshold + 1f).coerceIn(PostureAnalyzer.CVA_THRESHOLD_MIN, PostureAnalyzer.CVA_THRESHOLD_MAX)
-                                                PostureAnalyzer.cvaThreshold = tunedCvaThreshold
-                                            },
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                            modifier = Modifier.height(26.dp)
-                                        ) { Text("+", fontSize = 12.sp) }
-                                    }
+                                    Text("Good range: ${PostureAnalyzer.CVA_GOOD_MIN.toInt()}°–${PostureAnalyzer.CVA_GOOD_MAX.toInt()}°", fontSize = 11.sp, color = NeckWellTextPrimary)
+                                    Text("Acceptance Band", fontSize = 11.sp, color = NeckWellAccent)
                                 }
 
                                 // Smoothing Window Size
@@ -917,7 +909,6 @@ fun CalibrationScreen(navController: NavController) {
                                             tunedC7Ky = PostureAnalyzer.c7KyNeck
                                             tunedC7Kx = PostureAnalyzer.c7KxNeck
                                             tunedTragusAnt = PostureAnalyzer.tragusAnteriorRatio
-                                            tunedCvaThreshold = PostureAnalyzer.cvaThreshold
                                             tunedSmoothingWindow = PostureAnalyzer.smoothingWindowSize
                                             tunedSmoothingEnabled = PostureAnalyzer.isSmoothingEnabled
                                         },
@@ -1014,7 +1005,7 @@ fun CalibrationScreen(navController: NavController) {
                             color = if (PostureAnalyzer.isGoodPosture(s.meanCva)) NeckWellAccent else AlertCoral
                         )
                         Text("CVA Range: ${"%.1f".format(s.minCva)}° – ${"%.1f".format(s.maxCva)}°")
-                        Text("Frames in Good Posture (≥ ${PostureAnalyzer.cvaThreshold.toInt()}°): ${"%.1f".format(s.goodPosturePercentage)}%")
+                        Text("Frames in Good Posture (${PostureAnalyzer.CVA_GOOD_MIN.toInt()}°–${PostureAnalyzer.CVA_GOOD_MAX.toInt()}°): ${"%.1f".format(s.goodPosturePercentage)}%")
                         Text("Avg Landmark Jitter: Tragus ${"%.2f".format(s.avgTragusJitterPx)}px, C7 ${"%.2f".format(s.avgC7JitterPx)}px")
                         Spacer(Modifier.height(8.dp))
                         Text("Saved CSV:\n${s.sessionFile.name}", fontSize = 11.sp, color = NeckWellTextSecondary)

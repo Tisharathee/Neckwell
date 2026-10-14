@@ -93,10 +93,9 @@ object PostureAnalyzer {
     private const val LEFT_HIP = 23
     private const val RIGHT_HIP = 24
 
-    // Craniovertebral Angle (CVA) threshold bounds and default:
-    const val CVA_THRESHOLD_MIN = 51f
-    const val CVA_THRESHOLD_MAX = 59f
-    const val CVA_THRESHOLD_DEFAULT = 55f
+    // Acceptance Band for Good Posture CVA (51°..59°):
+    const val CVA_GOOD_MIN = 51f
+    const val CVA_GOOD_MAX = 59f
 
     // Plausibility range for physical Craniovertebral Angle (CVA):
     // Real human neck biomechanics in side view lie within 20°..75°.
@@ -107,40 +106,45 @@ object PostureAnalyzer {
     // Minimum required confidence / visibility for pose landmarks (ear & shoulder):
     const val MIN_LANDMARK_CONFIDENCE = 0.5f
 
-    // Active CVA threshold for posture classification (Good posture: CVA >= cvaThreshold)
-    // Clamped strictly to [CVA_THRESHOLD_MIN..CVA_THRESHOLD_MAX] (51°..59°)
-    var cvaThreshold: Float = CVA_THRESHOLD_DEFAULT
-        set(value) {
-            field = value.coerceIn(CVA_THRESHOLD_MIN, CVA_THRESHOLD_MAX)
-        }
-
     fun isPlausibleCva(cva: Float): Boolean = cva in CVA_PLAUSIBLE_MIN..CVA_PLAUSIBLE_MAX
 
-    fun isGoodPosture(cva: Float): Boolean = isPlausibleCva(cva) && cva >= cvaThreshold
+    /**
+     * Good posture acceptance band check:
+     * CVA must be plausible (20°..75°) AND within the 51°..59° acceptance band.
+     */
+    fun isGoodPosture(cva: Float): Boolean = isPlausibleCva(cva) && cva in CVA_GOOD_MIN..CVA_GOOD_MAX
     fun isPoorPosture(cva: Float): Boolean = !isGoodPosture(cva)
 
+    /**
+     * Standard classification used across UI, calibration gate, and logs:
+     * - CVA < 51 -> "Poor posture (head too far forward)"
+     * - 51 <= CVA <= 59 -> "Good posture"
+     * - CVA > 59 -> "Out of range, retake" (not Good, not calibratable)
+     */
     fun classifyPosture(cva: Float): String {
         val classification = when {
-            !isPlausibleCva(cva) -> "Invalid"
-            isGoodPosture(cva) -> "Good"
-            else -> "Poor"
+            !isPlausibleCva(cva) && cva > CVA_PLAUSIBLE_MAX -> "Out of range, retake"
+            !isPlausibleCva(cva) && cva < CVA_PLAUSIBLE_MIN -> "Out of range, retake"
+            cva < CVA_GOOD_MIN -> "Poor posture (head too far forward)"
+            cva in CVA_GOOD_MIN..CVA_GOOD_MAX -> "Good posture"
+            else -> "Out of range, retake"
         }
         if (DEV_MODE) {
             Log.d(
                 TAG,
-                "DEV: Raw CVA=${"%.1f".format(cva)}°, Active Threshold=${"%.1f".format(cvaThreshold)}°, Classification=$classification"
+                "DEV: Raw CVA=${"%.1f".format(cva)}°, Band=[${CVA_GOOD_MIN.toInt()}°..${CVA_GOOD_MAX.toInt()}°], Classification=$classification"
             )
         }
         return classification
     }
 
-    // Unified calibration-block checks requiring valid landmarks AND plausible CVA AND CVA >= threshold
+    // Unified calibration-block checks requiring valid landmarks AND plausible CVA AND 51 <= CVA <= 59
     fun canCalibrate(metrics: PostureMetrics?): Boolean {
         if (metrics == null) return false
         return metrics.hasValidLandmarks && isPlausibleCva(metrics.cva) && isGoodPosture(metrics.cva) && metrics.isCorrect
     }
 
-    fun canCalibrate(cva: Float): Boolean = isPlausibleCva(cva) && isGoodPosture(cva)
+    fun canCalibrate(cva: Float): Boolean = isGoodPosture(cva)
 
     // ---------------------------------------------------------------------------------------------
     // 1. Anatomical Tragus (Ear) Landmark Constants & Derivation:
@@ -379,7 +383,6 @@ object PostureAnalyzer {
     // Calibration Persistence & Tuning Helpers (for Goniometer on-device validation):
     // ---------------------------------------------------------------------------------------------
     private const val PREFS_NAME = "neckwell_calibration_prefs"
-    private const val KEY_CVA_THRESHOLD = "cva_threshold"
     private const val KEY_C7_KY_NECK = "c7_ky_neck"
     private const val KEY_C7_KX_NECK = "c7_kx_neck"
     private const val KEY_TRAGUS_ANTERIOR = "tragus_anterior_ratio"
@@ -389,7 +392,6 @@ object PostureAnalyzer {
     fun saveToPreferences(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit()
-            .putFloat(KEY_CVA_THRESHOLD, cvaThreshold)
             .putFloat(KEY_C7_KY_NECK, c7KyNeck)
             .putFloat(KEY_C7_KX_NECK, c7KxNeck)
             .putFloat(KEY_TRAGUS_ANTERIOR, tragusAnteriorRatio)
@@ -400,10 +402,6 @@ object PostureAnalyzer {
 
     fun loadFromPreferences(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        if (prefs.contains(KEY_CVA_THRESHOLD)) {
-            cvaThreshold = prefs.getFloat(KEY_CVA_THRESHOLD, CVA_THRESHOLD_DEFAULT)
-                .coerceIn(CVA_THRESHOLD_MIN, CVA_THRESHOLD_MAX)
-        }
         if (prefs.contains(KEY_C7_KY_NECK)) {
             c7KyNeck = prefs.getFloat(KEY_C7_KY_NECK, DEFAULT_C7_KY_NECK)
             c7KxNeck = prefs.getFloat(KEY_C7_KX_NECK, DEFAULT_C7_KX_NECK)
@@ -415,7 +413,6 @@ object PostureAnalyzer {
     }
 
     fun resetToDefaults(context: Context? = null) {
-        cvaThreshold = CVA_THRESHOLD_DEFAULT
         c7KyNeck = DEFAULT_C7_KY_NECK
         c7KyShoulder = DEFAULT_C7_KY_SHOULDER
         c7KxNeck = DEFAULT_C7_KX_NECK
@@ -643,7 +640,7 @@ object PostureAnalyzer {
                     TAG,
                     "DEV: Rejected (no person) - LeftVis[Ear=${"%.2f".format(leftEarVis)}, Sh=${"%.2f".format(leftShVis)}], " +
                     "RightVis[Ear=${"%.2f".format(rightEarVis)}, Sh=${"%.2f".format(rightShVis)}] | " +
-                    "Raw CVA=0.0°, Threshold=${"%.1f".format(cvaThreshold)}°, Classification=Invalid (No person detected, adjust camera)"
+                    "Raw CVA=0.0°, Band=[${CVA_GOOD_MIN.toInt()}°..${CVA_GOOD_MAX.toInt()}°], Classification=Invalid (No person detected, adjust camera)"
                 )
             }
             return metrics
@@ -852,7 +849,7 @@ object PostureAnalyzer {
                     TAG,
                     "DEV: Rejected (no person) - Landmarks[Ear=(${"%.3f".format(earX)}, ${"%.3f".format(earY)}), Sh=(${"%.3f".format(shX)}, ${"%.3f".format(shY)})] | " +
                     "Vis[Ear=${"%.2f".format(earVis)}, Sh=${"%.2f".format(shVis)}] | " +
-                    "Raw CVA=0.0°, Active Threshold=${"%.1f".format(cvaThreshold)}°, Classification=Invalid"
+                    "Raw CVA=0.0°, Band=[${CVA_GOOD_MIN.toInt()}°..${CVA_GOOD_MAX.toInt()}°], Classification=Invalid"
                 )
             }
             return metrics
@@ -889,7 +886,7 @@ object PostureAnalyzer {
                 shoulderAlignment = shoulderAlignment,
                 isCorrect = false,
                 reason = reason,
-                posture = "Poor",
+                posture = "Poor posture (head too far forward)",
                 hasValidLandmarks = true,
                 tragusXNorm = earX,
                 tragusYNorm = earY,
@@ -947,25 +944,23 @@ object PostureAnalyzer {
             0f // Side profile with single ear visible: relies on ESP32 IMU for roll
         }
 
-        // Gate Checks: ONLY accept if within verified good posture thresholds
-        val cvaOk = plausibleOk && isGoodPosture(cvaPixel)
+        // Gate Checks: ONLY accept if within verified good posture acceptance band & alignment
+        val cvaBandOk = isGoodPosture(cvaPixel)
         val dxOk = dxNorm <= MAX_EAR_SHOULDER_DX
         val rollOk = abs(lateralTilt) <= MAX_LATERAL_TILT_DEG
         val alignmentOk = !hipVisible || shoulderAlignment <= SHOULDER_HIP_MAX
-        val isCorrect = plausibleOk && cvaOk && dxOk && rollOk && alignmentOk
-        val posture = when {
-            !plausibleOk -> "Invalid"
-            isCorrect -> "Good"
-            else -> "Poor"
-        }
+        val isCorrect = plausibleOk && cvaBandOk && dxOk && rollOk && alignmentOk
+        val posture = classifyPosture(cvaPixel)
 
         val reason = when {
-            !plausibleOk -> "Invalid, retake"
-            isCorrect -> "Good posture — hold still"
+            !plausibleOk && cvaPixel > CVA_PLAUSIBLE_MAX -> "CVA ${"%.1f".format(cvaPixel)}° is outside the 51-59° range. Adjust posture and retake."
+            !plausibleOk && cvaPixel < CVA_PLAUSIBLE_MIN -> "Invalid, retake"
+            cvaPixel > CVA_GOOD_MAX -> "CVA ${"%.1f".format(cvaPixel)}° is outside the 51-59° range. Adjust posture and retake."
+            cvaPixel < CVA_GOOD_MIN -> "Poor posture (head too far forward) — CVA: ${"%.1f".format(cvaPixel)}° < 51°"
             !rollOk -> "Level your head (tilt: ${lateralTilt.toInt()}°)"
-            !cvaOk -> "Sit straight — head forward (CVA: ${"%.1f".format(cvaPixel)}° < ${cvaThreshold.toInt()}°)"
             !dxOk -> "Align head with shoulders (dx: ${"%.2f".format(dxNorm)})"
             !alignmentOk -> "Align shoulders over hips"
+            isCorrect -> "Good posture — hold still"
             else -> "Adjust posture"
         }
 
@@ -976,7 +971,7 @@ object PostureAnalyzer {
                 TAG,
                 "DEV: Landmarks[Ear=(${"%.3f".format(rawEarX)}, ${"%.3f".format(rawEarY)}), Sh=(${"%.3f".format(rawShoulderX)}, ${"%.3f".format(rawShoulderY)})] | " +
                 "Vis[Ear=${"%.2f".format(earVis)}, Sh=${"%.2f".format(shVis)}] | " +
-                "Raw CVA=${"%.1f".format(cvaPixel)}°, Active Threshold=${"%.1f".format(cvaThreshold)}°, Classification=$posture"
+                "Raw CVA=${"%.1f".format(cvaPixel)}°, Band=[${CVA_GOOD_MIN.toInt()}°..${CVA_GOOD_MAX.toInt()}°], Classification=$posture"
             )
             Log.d(
                 TAG,
@@ -990,7 +985,7 @@ object PostureAnalyzer {
                     "dxPx=${"%.1f".format(dxPx)}, dyPx=${"%.1f".format(dyPx)} | " +
                     "Frame=${w}x${h} (aspect=${"%.2f".format(w.toFloat() / h)}) | " +
                     "CVA(pixel)=${"%.1f".format(cvaPixel)}° (rawInstant=${"%.1f".format(rawInstCva)}°, jitter=[T:${"%.1f".format(jitterTragusPx)}px, C7:${"%.1f".format(jitterC7Px)}px]), " +
-                    "VertAngle=${"%.1f".format(angleWithVertical)}° | Threshold=${cvaThreshold}° | Posture=$posture (cvaOk=$cvaOk, isCorrect=$isCorrect, reason='$reason')"
+                    "VertAngle=${"%.1f".format(angleWithVertical)}° | Band=[${CVA_GOOD_MIN.toInt()}°..${CVA_GOOD_MAX.toInt()}°] | Posture=$posture (cvaBandOk=$cvaBandOk, isCorrect=$isCorrect, reason='$reason')"
             )
         }
 

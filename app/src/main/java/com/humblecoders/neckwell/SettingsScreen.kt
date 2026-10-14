@@ -93,7 +93,6 @@ fun SettingsScreen(navController: NavController) {
     val notificationsEnabled by NeckWellPreferences.notificationsEnabled.collectAsState()
     val hapticFeedback by NeckWellPreferences.hapticFeedbackEnabled.collectAsState()
     val soundAlerts by NeckWellPreferences.soundAlertsEnabled.collectAsState()
-    val cvaThreshold by NeckWellPreferences.cvaThreshold.collectAsState()
     val deviceStatus by DeviceStatusManager.deviceStatus.collectAsState()
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -226,17 +225,13 @@ fun SettingsScreen(navController: NavController) {
                     navController.navigate("calibration")
                 }
 
-                SettingsSliderItem(
+                SettingsClickableItem(
                     icon = Icons.Outlined.Tune,
-                    title = "Good posture threshold",
-                    description = "Minimum CVA required for good posture: ${cvaThreshold.toInt()}°",
-                    value = cvaThreshold,
-                    valueRange = PostureAnalyzer.CVA_THRESHOLD_MIN..PostureAnalyzer.CVA_THRESHOLD_MAX,
-                    steps = (PostureAnalyzer.CVA_THRESHOLD_MAX - PostureAnalyzer.CVA_THRESHOLD_MIN).toInt() - 1,
-                    onValueChange = { newValue ->
-                        NeckWellPreferences.setCvaThreshold(context, newValue)
-                    }
-                )
+                    title = "Good posture range",
+                    description = "Good range: ${PostureAnalyzer.CVA_GOOD_MIN.toInt()}°–${PostureAnalyzer.CVA_GOOD_MAX.toInt()}°"
+                ) {
+                    Toast.makeText(context, "Good posture range is fixed to 51°–59°", Toast.LENGTH_SHORT).show()
+                }
             }
 
             SettingsSection("About") {

@@ -66,7 +66,7 @@ class CvaComputationTest {
 
         // Verify that 55° is classified as Good posture
         assertTrue(metrics.isCorrect)
-        assertEquals("Good", metrics.posture)
+        assertEquals("Good posture", metrics.posture)
 
         // Verify exact pixel landmark telemetry
         assertEquals(tragusXPx, metrics.tragusXPx, 0.5f)
@@ -142,9 +142,8 @@ class CvaComputationTest {
         )
 
         assertEquals(41.5f, metrics.cva, 0.2f)
-        assertFalse("Expected CVA < active threshold to be classified as incorrect", metrics.isCorrect)
-        assertEquals("Poor", metrics.posture)
-        assertTrue(metrics.reason.contains("Sit straight"))
+        assertFalse("Expected CVA < active acceptance band to be classified as incorrect", metrics.isCorrect)
+        assertEquals("Poor posture (head too far forward)", metrics.posture)
         assertFalse(PostureAnalyzer.canCalibrate(metrics.cva))
     }
 
@@ -167,8 +166,8 @@ class CvaComputationTest {
         assertEquals(56.0f, metrics.cvaPixelSpace, 0.1f)
         // Vertical angle = 90° - 56° = 34.0°
         assertEquals(34.0f, metrics.angleWithVertical, 0.1f)
-        assertTrue("Expected 56.0° to be classified as correct with CVA >= threshold", metrics.isCorrect)
-        assertEquals("Good", metrics.posture)
+        assertTrue("Expected 56.0° to be classified as correct within 51°-59° band", metrics.isCorrect)
+        assertEquals("Good posture", metrics.posture)
         assertTrue(PostureAnalyzer.canCalibrate(metrics.cva))
     }
 
@@ -188,9 +187,8 @@ class CvaComputationTest {
             imageHeight = 1000
         )
         assertEquals(35.0f, metrics.cva, 0.2f)
-        assertFalse("35.0° must be classified as incorrect (< active threshold)", metrics.isCorrect)
-        assertEquals("Poor", metrics.posture)
-        assertTrue(metrics.reason.contains("Sit straight"))
+        assertFalse("35.0° must be classified as incorrect (< 51°)", metrics.isCorrect)
+        assertEquals("Poor posture (head too far forward)", metrics.posture)
         assertFalse(PostureAnalyzer.canCalibrate(metrics.cva))
     }
 

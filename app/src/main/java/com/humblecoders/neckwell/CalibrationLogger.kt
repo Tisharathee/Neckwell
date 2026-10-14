@@ -261,7 +261,7 @@ object CalibrationLogger {
                     style = android.graphics.Paint.Style.FILL
                 }
                 canvas.drawRect(0f, 0f, imgW, paintText.textSize * 3.8f, bannerPaint)
-                canvas.drawText("CVA: ${"%.1f".format(metrics.cva)}°  |  Threshold: ≥ ${PostureAnalyzer.cvaThreshold.toInt()}°  |  Anatomical Tragus & C7", 20f, paintText.textSize * 1.3f, paintText)
+                canvas.drawText("CVA: ${"%.1f".format(metrics.cva)}°  |  Good range: ${PostureAnalyzer.CVA_GOOD_MIN.toInt()}°–${PostureAnalyzer.CVA_GOOD_MAX.toInt()}°  |  Anatomical Tragus & C7", 20f, paintText.textSize * 1.3f, paintText)
                 val bannerLine2 = if (errorMetrics != null) {
                     "Tragus: (${metrics.tragusXPx.toInt()}, ${metrics.tragusYPx.toInt()}) [Δ${"%.1f".format(errorMetrics.tragusPixelError)}px]  |  C7: (${metrics.c7XPx.toInt()}, ${metrics.c7YPx.toInt()}) [Δ${"%.1f".format(errorMetrics.c7PixelError)}px]"
                 } else {
