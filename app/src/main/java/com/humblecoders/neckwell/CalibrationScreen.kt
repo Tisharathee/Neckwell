@@ -271,8 +271,8 @@ fun CalibrationScreen(navController: NavController) {
                         }
                     }
 
-                    if (metrics == null) {
-                        statusText = "Turn sideways — show ear & shoulder"
+                    if (metrics == null || !metrics.hasValidLandmarks) {
+                        statusText = "No person detected, adjust camera"
                         cvaValue = 0f
                         lateralTiltValue = 0f
                         stableFrames = 0
@@ -284,15 +284,15 @@ fun CalibrationScreen(navController: NavController) {
                         if (PostureAnalyzer.DEV_MODE) {
                             android.util.Log.d(
                                 "CalibrationScreen",
-                                "CVA=${"%.1f".format(metrics.cva)}°, NormCVA=${"%.1f".format(metrics.cvaNormalizedSpace)}°, Threshold=${PostureAnalyzer.cvaThreshold.toInt()}°, Posture=${metrics.posture}, isCorrect=${metrics.isCorrect}, stableFrames=$stableFrames/$REQUIRED_STABLE_FRAMES"
+                                "CVA=${"%.1f".format(metrics.cva)}°, NormCVA=${"%.1f".format(metrics.cvaNormalizedSpace)}°, Threshold=${PostureAnalyzer.cvaThreshold.toInt()}°, Posture=${metrics.posture}, isCorrect=${metrics.isCorrect}, hasValidLandmarks=${metrics.hasValidLandmarks}, stableFrames=$stableFrames/$REQUIRED_STABLE_FRAMES"
                             )
                         }
 
-                        // Only increment stable frames when posture quality passes ALL gates (CVA, lateral tilt, alignment)
-                        val canCalibrate = PostureAnalyzer.canCalibrate(metrics.cva)
+                        // Only increment stable frames when posture quality passes ALL gates (valid landmarks, plausible CVA, threshold, lateral tilt, alignment)
+                        val canCalibrate = PostureAnalyzer.canCalibrate(metrics)
                         stableFrames = if (metrics.isCorrect && canCalibrate) stableFrames + 1 else 0
 
-                        val isCurrentlyGood = PostureAnalyzer.isGoodPosture(metrics.cva)
+                        val isCurrentlyGood = PostureAnalyzer.isGoodPosture(metrics.cva) && metrics.hasValidLandmarks
                         if (isCurrentlyGood) {
                             if (goodPostureHoldStart == 0L) {
                                 goodPostureHoldStart = System.currentTimeMillis()
@@ -395,7 +395,7 @@ fun CalibrationScreen(navController: NavController) {
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                "Live CVA: ${"%.1f".format(cvaValue)}°",
+                                if (cvaValue > 0f) "Live CVA: ${"%.1f".format(cvaValue)}°" else "Live CVA: --",
                                 color = if (PostureAnalyzer.isGoodPosture(cvaValue)) NeckWellAccent else AlertCoral,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
@@ -1084,7 +1084,7 @@ private fun PostureLandmarkOverlay(
     clinicalRef: ClinicalReference? = null,
     modifier: Modifier = Modifier
 ) {
-    if (metrics == null || (metrics.tragusXNorm == 0f && metrics.c7XNorm == 0f)) return
+    if (metrics == null || !metrics.hasValidLandmarks || (metrics.tragusXNorm == 0f && metrics.c7XNorm == 0f)) return
 
     Canvas(modifier = modifier.fillMaxSize()) {
         val viewW = size.width

@@ -83,11 +83,11 @@ class PostureAnalyzerTest {
 
     @Test
     fun testLowVisibilityRejection() {
-        // Low landmark visibility
+        // Low landmark visibility (< 0.5) must show "No person detected, adjust camera"
         val metrics = PostureAnalyzer.computeMetrics(
             earX = 0.50f,
             earY = 0.25f,
-            earVis = 0.20f, // Below 0.3 threshold
+            earVis = 0.20f, // Below 0.5 threshold
             shX = 0.50f,
             shY = 0.45f,
             shVis = 0.95f,
@@ -96,7 +96,31 @@ class PostureAnalyzerTest {
         )
 
         assertFalse("Expected low visibility to be rejected", metrics.isCorrect)
-        assertEquals("Turn sideways — show ear & shoulder", metrics.reason)
+        assertFalse("Expected invalid landmarks", metrics.hasValidLandmarks)
+        assertEquals("No person detected, adjust camera", metrics.reason)
+        assertEquals(0f, metrics.cva, 0.001f)
+        assertFalse("Calibration must be blocked when no person detected", PostureAnalyzer.canCalibrate(metrics))
+    }
+
+    @Test
+    fun testLandmarksOutsideFrameRejected() {
+        // Landmark outside frame (earX = 1.05f)
+        val metrics = PostureAnalyzer.computeMetrics(
+            earX = 1.05f,
+            earY = 0.25f,
+            earVis = 0.95f,
+            shX = 0.50f,
+            shY = 0.45f,
+            shVis = 0.95f,
+            imageWidth = 1000,
+            imageHeight = 1000
+        )
+
+        assertFalse(metrics.isCorrect)
+        assertFalse(metrics.hasValidLandmarks)
+        assertEquals("No person detected, adjust camera", metrics.reason)
+        assertEquals(0f, metrics.cva, 0.001f)
+        assertFalse(PostureAnalyzer.canCalibrate(metrics))
     }
 
     @Test
@@ -106,7 +130,7 @@ class PostureAnalyzerTest {
             earX = 0.40f,
             earY = 0.20f,
             earVis = 0.90f,
-            shX = 0.42f,
+            shX = 0.54f, // Set shX to 0.54 so CVA = atan2(0.25, 0.14) = 60.7° (plausible), while testing lateral tilt
             shY = 0.45f,
             shVis = 0.90f,
             otherEarX = 0.55f,
@@ -135,6 +159,13 @@ class PostureAnalyzerTest {
         assertEquals("Poor", PostureAnalyzer.classifyPosture(51f))
         assertEquals("Poor", PostureAnalyzer.classifyPosture(48f))
         assertEquals("Poor", PostureAnalyzer.classifyPosture(25f))
+        assertEquals("Poor", PostureAnalyzer.classifyPosture(20f))
+
+        // Values outside plausibility range (20°..75°) MUST be Invalid and block calibration
+        assertEquals("Invalid", PostureAnalyzer.classifyPosture(89.8f))
+        assertEquals("Invalid", PostureAnalyzer.classifyPosture(75.1f))
+        assertEquals("Invalid", PostureAnalyzer.classifyPosture(19.9f))
+        assertEquals("Invalid", PostureAnalyzer.classifyPosture(0f))
 
         // isGoodPosture helper
         assertTrue(PostureAnalyzer.isGoodPosture(55f))
@@ -144,6 +175,9 @@ class PostureAnalyzerTest {
         assertFalse(PostureAnalyzer.isGoodPosture(54.9f))
         assertFalse(PostureAnalyzer.isGoodPosture(48f))
         assertFalse(PostureAnalyzer.isGoodPosture(25f))
+        assertFalse("89.8° ceiling artifact must never be Good", PostureAnalyzer.isGoodPosture(89.8f))
+        assertFalse("75.1° must never be Good", PostureAnalyzer.isGoodPosture(75.1f))
+        assertFalse("19.9° must never be Good", PostureAnalyzer.isGoodPosture(19.9f))
 
         // isPoorPosture helper
         assertFalse(PostureAnalyzer.isPoorPosture(55f))
@@ -152,13 +186,113 @@ class PostureAnalyzerTest {
         assertTrue(PostureAnalyzer.isPoorPosture(54.9f))
         assertTrue(PostureAnalyzer.isPoorPosture(48f))
         assertTrue(PostureAnalyzer.isPoorPosture(25f))
+        assertTrue(PostureAnalyzer.isPoorPosture(89.8f)) // Not Good
 
-        // Calibration-block check uses same threshold
+        // Calibration-block check uses same threshold and plausibility guard
         assertTrue(PostureAnalyzer.canCalibrate(55f))
         assertTrue(PostureAnalyzer.canCalibrate(59f))
         assertFalse(PostureAnalyzer.canCalibrate(54.9f))
         assertFalse(PostureAnalyzer.canCalibrate(48f))
         assertFalse(PostureAnalyzer.canCalibrate(25f))
+        assertFalse("89.8° must block calibration", PostureAnalyzer.canCalibrate(89.8f))
+        assertFalse("75.1° must block calibration", PostureAnalyzer.canCalibrate(75.1f))
+        assertFalse("19.9° must block calibration", PostureAnalyzer.canCalibrate(19.9f))
+    }
+
+    @Test
+    fun testCeilingArtifact89DegPlausibilityGuard() {
+        val ceilingMetrics = PostureAnalyzer.computeMetrics(
+            earX = 0.500f,
+            earY = 0.100f,
+            earVis = 0.95f,
+            shX = 0.501f, // Almost directly under ear -> dx = 1px, dy = 700px -> CVA ~ 89.9°
+            shY = 0.800f,
+            shVis = 0.95f,
+            imageWidth = 1000,
+            imageHeight = 1000
+        )
+
+        assertTrue("Expected CVA > 75° (actual: ${ceilingMetrics.cva}°)", ceilingMetrics.cva > 75f)
+        assertFalse("Ceiling artifact must not be correct", ceilingMetrics.isCorrect)
+        assertEquals("Invalid", ceilingMetrics.posture)
+        assertEquals("Invalid, retake", ceilingMetrics.reason)
+        assertFalse("Ceiling artifact must block calibration", PostureAnalyzer.canCalibrate(ceilingMetrics))
+    }
+
+    @Test
+    fun testRealPersonSideViewPostureSlouchedAndUpright() {
+        // Side-view camera setup:
+        // A. Upright posture: head aligned with cervical spine
+        val uprightEarX = 0.49f
+        val uprightEarY = 0.24f
+        val shoulderX = 0.50f
+        val shoulderY = 0.46f
+
+        val (uprightTragusX, uprightTragusY) = PostureAnalyzer.deriveTragusLandmark(
+            earX = uprightEarX,
+            earY = uprightEarY,
+            isFacingLeft = true,
+            neckHeight = shoulderY - uprightEarY
+        )
+        val (uprightC7X, uprightC7Y) = PostureAnalyzer.deriveC7Landmark(
+            shoulderMidX = shoulderX,
+            shoulderMidY = shoulderY,
+            earX = uprightTragusX,
+            earY = uprightTragusY,
+            isFacingLeft = true
+        )
+
+        val uprightMetrics = PostureAnalyzer.computeMetrics(
+            earX = uprightTragusX,
+            earY = uprightTragusY,
+            earVis = 0.95f,
+            shX = uprightC7X,
+            shY = uprightC7Y,
+            shVis = 0.95f,
+            imageWidth = 1000,
+            imageHeight = 1000
+        )
+
+        println("Upright Side View CVA: ${uprightMetrics.cva}° | Posture: ${uprightMetrics.posture}")
+        assertTrue("Upright CVA should be about 55°-65° (actual: ${uprightMetrics.cva}°)", uprightMetrics.cva in 55f..65f)
+        assertTrue("Upright posture must be classified as Good", uprightMetrics.isCorrect)
+        assertEquals("Good", uprightMetrics.posture)
+        assertTrue("Calibration must be allowed for upright posture", PostureAnalyzer.canCalibrate(uprightMetrics))
+
+        // B. Slouched posture: head translated forward (ear moves anteriorly to 0.38)
+        val slouchedEarX = 0.38f
+        val slouchedEarY = 0.28f
+
+        val (slouchedTragusX, slouchedTragusY) = PostureAnalyzer.deriveTragusLandmark(
+            earX = slouchedEarX,
+            earY = slouchedEarY,
+            isFacingLeft = true,
+            neckHeight = shoulderY - slouchedEarY
+        )
+        val (slouchedC7X, slouchedC7Y) = PostureAnalyzer.deriveC7Landmark(
+            shoulderMidX = shoulderX,
+            shoulderMidY = shoulderY,
+            earX = slouchedTragusX,
+            earY = slouchedTragusY,
+            isFacingLeft = true
+        )
+
+        val slouchedMetrics = PostureAnalyzer.computeMetrics(
+            earX = slouchedTragusX,
+            earY = slouchedTragusY,
+            earVis = 0.95f,
+            shX = slouchedC7X,
+            shY = slouchedC7Y,
+            shVis = 0.95f,
+            imageWidth = 1000,
+            imageHeight = 1000
+        )
+
+        println("Slouched Side View CVA: ${slouchedMetrics.cva}° | Posture: ${slouchedMetrics.posture}")
+        assertTrue("Slouched CVA should be about 35°-45° (actual: ${slouchedMetrics.cva}°)", slouchedMetrics.cva in 30f..48f)
+        assertFalse("Slouched posture must NOT be correct", slouchedMetrics.isCorrect)
+        assertEquals("Poor", slouchedMetrics.posture)
+        assertFalse("Calibration must be blocked for slouched posture", PostureAnalyzer.canCalibrate(slouchedMetrics))
     }
 
     @Test

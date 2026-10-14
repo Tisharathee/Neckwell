@@ -13,6 +13,7 @@ data class PostureMetrics(
     val isCorrect: Boolean,      // True only if all posture axes are within acceptable thresholds
     val reason: String,
     val posture: String = if (isCorrect) "Good" else "Poor",
+    val hasValidLandmarks: Boolean = true,
     val tragusXNorm: Float = 0f,
     val tragusYNorm: Float = 0f,
     val c7XNorm: Float = 0f,
@@ -97,6 +98,15 @@ object PostureAnalyzer {
     const val CVA_THRESHOLD_MAX = 59f
     const val CVA_THRESHOLD_DEFAULT = 55f
 
+    // Plausibility range for physical Craniovertebral Angle (CVA):
+    // Real human neck biomechanics in side view lie within 20°..75°.
+    // Angles outside this band indicate false detections, ceiling artifacts, or extreme camera misalignment.
+    const val CVA_PLAUSIBLE_MIN = 20f
+    const val CVA_PLAUSIBLE_MAX = 75f
+
+    // Minimum required confidence / visibility for pose landmarks (ear & shoulder):
+    const val MIN_LANDMARK_CONFIDENCE = 0.5f
+
     // Active CVA threshold for posture classification (Good posture: CVA >= cvaThreshold)
     // Clamped strictly to [CVA_THRESHOLD_MIN..CVA_THRESHOLD_MAX] (51°..59°)
     var cvaThreshold: Float = CVA_THRESHOLD_DEFAULT
@@ -104,11 +114,17 @@ object PostureAnalyzer {
             field = value.coerceIn(CVA_THRESHOLD_MIN, CVA_THRESHOLD_MAX)
         }
 
-    fun isGoodPosture(cva: Float): Boolean = cva >= cvaThreshold
+    fun isPlausibleCva(cva: Float): Boolean = cva in CVA_PLAUSIBLE_MIN..CVA_PLAUSIBLE_MAX
+
+    fun isGoodPosture(cva: Float): Boolean = isPlausibleCva(cva) && cva >= cvaThreshold
     fun isPoorPosture(cva: Float): Boolean = !isGoodPosture(cva)
 
     fun classifyPosture(cva: Float): String {
-        val classification = if (isGoodPosture(cva)) "Good" else "Poor"
+        val classification = when {
+            !isPlausibleCva(cva) -> "Invalid"
+            isGoodPosture(cva) -> "Good"
+            else -> "Poor"
+        }
         if (DEV_MODE) {
             Log.d(
                 TAG,
@@ -118,8 +134,13 @@ object PostureAnalyzer {
         return classification
     }
 
-    // Single unified calibration-block check using the exact same threshold
-    fun canCalibrate(cva: Float): Boolean = isGoodPosture(cva)
+    // Unified calibration-block checks requiring valid landmarks AND plausible CVA AND CVA >= threshold
+    fun canCalibrate(metrics: PostureMetrics?): Boolean {
+        if (metrics == null) return false
+        return metrics.hasValidLandmarks && isPlausibleCva(metrics.cva) && isGoodPosture(metrics.cva) && metrics.isCorrect
+    }
+
+    fun canCalibrate(cva: Float): Boolean = isPlausibleCva(cva) && isGoodPosture(cva)
 
     // ---------------------------------------------------------------------------------------------
     // 1. Anatomical Tragus (Ear) Landmark Constants & Derivation:
@@ -412,9 +433,11 @@ object PostureAnalyzer {
     }
 
     /**
-     * Primary anatomical C7 estimator using calibrated regression coefficients:
-     * Takes the shoulder midpoint and scales by neck length (ear-to-shoulder vertical distance)
-     * and optional shoulder width.
+     * Anatomical C7 (vertebra prominens) estimator for side-view posture camera setup:
+     * Located at the posterior base of the cervical spine:
+     * 1. Elevate upward above shoulder level (default 35% of ear-to-shoulder vertical distance).
+     * 2. Shift posteriorly along the spinal column (default 25% of neck height, away from face).
+     * Does NOT force C7 under the ear, ensuring true physical CVA relative to the horizontal.
      */
     fun deriveC7Landmark(
         shoulderMidX: Float,
@@ -430,26 +453,14 @@ object PostureAnalyzer {
         kxNeck: Float = c7KxNeck,
         kxShoulder: Float = c7KxShoulder
     ): Pair<Float, Float> {
-        val sWidth = maxOf(0.01f, shoulderWidth ?: (0.35f)) // fallback to 35% of frame width if null
+        val neckHeight = maxOf(0.04f, shoulderMidY - earY)
         
-        // Compute raw tilt angle
-        val rawDx = Math.abs(earX - shoulderMidX)
-        val rawDy = shoulderMidY - earY
-        val rawTiltAngle = Math.toDegrees(Math.atan2(rawDy.toDouble(), rawDx.toDouble())).toFloat()
-        
-        // Pose-dependent coefficients derived from least-squares fit on validation captures
-        val w0 = 0.070161f
-        val w1 = 0.002344f
-        val dyUp = sWidth * (w0 + w1 * rawTiltAngle)
-        
-        val v0 = 0.245558f
-        val v1 = -0.001656f
-        val dxBack = sWidth * (v0 + v1 * rawTiltAngle)
-
+        // Vertical elevation above shoulder midpoint toward cervical base
+        val dyUp = kyNeck * neckHeight
         val c7Y = shoulderMidY - dyUp
 
-        // If facing Left (nose < ear), gaze is left (-X), so back of neck is right (+X).
-        // If facing Right (nose > ear), gaze is right (+X), so back of neck is left (-X).
+        // Horizontal dorsal shift into cervical spine away from gaze / chest
+        val dxBack = kxNeck * neckHeight
         val posteriorDirection = if (isFacingLeft) 1f else -1f
         val c7X = shoulderMidX + (posteriorDirection * dxBack)
 
@@ -600,10 +611,48 @@ object PostureAnalyzer {
         val leftShVis = leftShLm.visibility().orElse(0f)
         val rightShVis = rightShLm.visibility().orElse(0f)
 
+        // Landmark frame boundary check helper
+        fun isInside(x: Float, y: Float) = x in 0.0f..1.0f && y in 0.0f..1.0f
+
+        val leftValid = leftEarVis >= MIN_LANDMARK_CONFIDENCE && leftShVis >= MIN_LANDMARK_CONFIDENCE &&
+                isInside(leftEarLm.x(), leftEarLm.y()) && isInside(leftShLm.x(), leftShLm.y())
+
+        val rightValid = rightEarVis >= MIN_LANDMARK_CONFIDENCE && rightShVis >= MIN_LANDMARK_CONFIDENCE &&
+                isInside(rightEarLm.x(), rightEarLm.y()) && isInside(rightShLm.x(), rightShLm.y())
+
+        val w = if (imageWidth > 0) imageWidth else 1000
+        val h = if (imageHeight > 0) imageHeight else 1000
+
+        // If neither side has ear and shoulder with confidence >= 0.5 inside the frame:
+        if (!leftValid && !rightValid) {
+            smoother.reset()
+            val metrics = PostureMetrics(
+                cva = 0f,
+                lateralTilt = 0f,
+                shoulderAlignment = 0f,
+                isCorrect = false,
+                reason = "No person detected, adjust camera",
+                posture = "Invalid",
+                hasValidLandmarks = false,
+                sideLabel = "Unknown",
+                imageWidth = w,
+                imageHeight = h
+            )
+            if (DEV_MODE) {
+                Log.d(
+                    TAG,
+                    "DEV: Rejected (no person) - LeftVis[Ear=${"%.2f".format(leftEarVis)}, Sh=${"%.2f".format(leftShVis)}], " +
+                    "RightVis[Ear=${"%.2f".format(rightEarVis)}, Sh=${"%.2f".format(rightShVis)}] | " +
+                    "Raw CVA=0.0°, Threshold=${"%.1f".format(cvaThreshold)}°, Classification=Invalid (No person detected, adjust camera)"
+                )
+            }
+            return metrics
+        }
+
         // Pick whichever side is more visible to the camera (true profile side)
         val leftVis = (leftEarVis + leftShVis) / 2f
         val rightVis = (rightEarVis + rightShVis) / 2f
-        val useLeft = leftVis >= rightVis
+        val useLeft = if (leftValid && rightValid) leftVis >= rightVis else leftValid
         val sideLabel = if (useLeft) "Left" else "Right"
 
         val earLm = if (useLeft) leftEarLm else rightEarLm
@@ -611,13 +660,12 @@ object PostureAnalyzer {
         val earVis = earLm.visibility().orElse(0f)
         val shVis = shLm.visibility().orElse(0f)
 
-        if (earVis < 0.3f || shVis < 0.3f) {
-            smoother.reset()
-            return PostureMetrics(0f, 0f, 0f, false, "Turn sideways — show ear & shoulder", sideLabel = sideLabel)
-        }
-
         val otherEarLm = if (useLeft) rightEarLm else leftEarLm
         val otherEarVis = otherEarLm.visibility().orElse(0f)
+        val otherShLm = if (useLeft) rightShLm else leftShLm
+        val otherShVis = otherShLm.visibility().orElse(0f)
+        val otherShInside = isInside(otherShLm.x(), otherShLm.y())
+        val isOtherShValid = otherShVis >= MIN_LANDMARK_CONFIDENCE && otherShInside
 
         // Torso Alignment (Hip check kept optional — most desk setups won't see hips)
         val hipL = landmarks[LEFT_HIP]
@@ -666,8 +714,8 @@ object PostureAnalyzer {
         }
 
         // 1. Shoulder Midpoint & Span (from active landmarks):
-        val shoulderMidX = (activeFrame.leftShX + activeFrame.rightShX) / 2f
-        val shoulderMidY = (activeFrame.leftShY + activeFrame.rightShY) / 2f
+        val shoulderMidX = if (isOtherShValid) (activeFrame.leftShX + activeFrame.rightShX) / 2f else (if (useLeft) activeFrame.leftShX else activeFrame.rightShX)
+        val shoulderMidY = if (isOtherShValid) (activeFrame.leftShY + activeFrame.rightShY) / 2f else (if (useLeft) activeFrame.leftShY else activeFrame.rightShY)
         val shoulderWidth = abs(activeFrame.leftShX - activeFrame.rightShX)
         val shoulderAlignment = if (hipVisible) abs(shoulderMidX - hipMidX) else 0f
 
@@ -679,7 +727,7 @@ object PostureAnalyzer {
             useLeft
         }
 
-        val neckHeight = maxOf(0.01f, shoulderMidY - activeFrame.earY)
+        val neckHeight = maxOf(0.04f, shoulderMidY - activeFrame.earY)
 
         // 3. Anatomically Derived Tragus (Ear Canal Opening Flap):
         val (tragusX, tragusY) = deriveTragusLandmark(
@@ -702,14 +750,10 @@ object PostureAnalyzer {
             shoulderWidth = shoulderWidth
         )
 
-        // Frame dimensions:
-        val w = if (imageWidth > 0) imageWidth else 1000
-        val h = if (imageHeight > 0) imageHeight else 1000
-
         // Calculate instantaneous unsmoothed CVA:
-        val rawShoulderMidX = (leftShLm.x() + rightShLm.x()) / 2f
-        val rawShoulderMidY = (leftShLm.y() + rightShLm.y()) / 2f
-        val rawNeckH = maxOf(0.01f, rawShoulderMidY - earLm.y())
+        val rawShoulderMidX = if (isOtherShValid) (leftShLm.x() + rightShLm.x()) / 2f else shLm.x()
+        val rawShoulderMidY = if (isOtherShValid) (leftShLm.y() + rightShLm.y()) / 2f else shLm.y()
+        val rawNeckH = maxOf(0.04f, rawShoulderMidY - earLm.y())
         val rawFacingLeft = if (noseLm != null && noseVis >= 0.25f) noseLm.x() < earLm.x() else useLeft
         val (rawTX, rawTY) = deriveTragusLandmark(earLm.x(), earLm.y(), rawFacingLeft, rawNeckH, mouthLm?.x(), mouthLm?.y())
         val (rawC7X, rawC7Y) = deriveC7Landmark(rawShoulderMidX, rawShoulderMidY, rawTX, rawTY, rawFacingLeft, hipMidY, abs(leftShLm.x() - rightShLm.x()))
@@ -789,9 +833,28 @@ object PostureAnalyzer {
         rawInstantaneousCva: Float? = null,
         isSmoothed: Boolean = false
     ): PostureMetrics {
-        if (earVis < 0.3f || shVis < 0.3f) {
-            val metrics = PostureMetrics(0f, 0f, 0f, false, "Turn sideways — show ear & shoulder", sideLabel = sideLabel)
-            Log.d(TAG, "Detection rejected: earVis=$earVis, shVis=$shVis")
+        val landmarksInside = earX in 0.0f..1.0f && earY in 0.0f..1.0f && shX in 0.0f..1.0f && shY in 0.0f..1.0f
+        if (earVis < MIN_LANDMARK_CONFIDENCE || shVis < MIN_LANDMARK_CONFIDENCE || !landmarksInside) {
+            val metrics = PostureMetrics(
+                cva = 0f,
+                lateralTilt = 0f,
+                shoulderAlignment = 0f,
+                isCorrect = false,
+                reason = "No person detected, adjust camera",
+                posture = "Invalid",
+                hasValidLandmarks = false,
+                sideLabel = sideLabel,
+                imageWidth = if (imageWidth > 0) imageWidth else 1000,
+                imageHeight = if (imageHeight > 0) imageHeight else 1000
+            )
+            if (DEV_MODE) {
+                Log.d(
+                    TAG,
+                    "DEV: Rejected (no person) - Landmarks[Ear=(${"%.3f".format(earX)}, ${"%.3f".format(earY)}), Sh=(${"%.3f".format(shX)}, ${"%.3f".format(shY)})] | " +
+                    "Vis[Ear=${"%.2f".format(earVis)}, Sh=${"%.2f".format(shVis)}] | " +
+                    "Raw CVA=0.0°, Active Threshold=${"%.1f".format(cvaThreshold)}°, Classification=Invalid"
+                )
+            }
             return metrics
         }
 
@@ -826,6 +889,8 @@ object PostureAnalyzer {
                 shoulderAlignment = shoulderAlignment,
                 isCorrect = false,
                 reason = reason,
+                posture = "Poor",
+                hasValidLandmarks = true,
                 tragusXNorm = earX,
                 tragusYNorm = earY,
                 c7XNorm = shX,
@@ -868,6 +933,9 @@ object PostureAnalyzer {
         // Angle relative to vertical axis (complementary angle):
         val angleWithVertical = (90.0 - cvaPixel.toDouble()).coerceIn(0.0, 90.0).toFloat()
 
+        // Plausibility Check: CVA must be within [20°..75°]
+        val plausibleOk = isPlausibleCva(cvaPixel)
+
         // 2. Lateral Roll / Side-Tilt: computed if both ears are visible
         val lateralTilt = if (otherEarX != null && otherEarY != null && otherEarVis >= 0.35f) {
             val otherXPx = otherEarX * w
@@ -880,14 +948,19 @@ object PostureAnalyzer {
         }
 
         // Gate Checks: ONLY accept if within verified good posture thresholds
-        val cvaOk = isGoodPosture(cvaPixel)
+        val cvaOk = plausibleOk && isGoodPosture(cvaPixel)
         val dxOk = dxNorm <= MAX_EAR_SHOULDER_DX
         val rollOk = abs(lateralTilt) <= MAX_LATERAL_TILT_DEG
         val alignmentOk = !hipVisible || shoulderAlignment <= SHOULDER_HIP_MAX
-        val isCorrect = cvaOk && dxOk && rollOk && alignmentOk
-        val posture = if (isCorrect) "Good" else "Poor"
+        val isCorrect = plausibleOk && cvaOk && dxOk && rollOk && alignmentOk
+        val posture = when {
+            !plausibleOk -> "Invalid"
+            isCorrect -> "Good"
+            else -> "Poor"
+        }
 
         val reason = when {
+            !plausibleOk -> "Invalid, retake"
             isCorrect -> "Good posture — hold still"
             !rollOk -> "Level your head (tilt: ${lateralTilt.toInt()}°)"
             !cvaOk -> "Sit straight — head forward (CVA: ${"%.1f".format(cvaPixel)}° < ${cvaThreshold.toInt()}°)"
@@ -901,7 +974,9 @@ object PostureAnalyzer {
         if (DEV_MODE) {
             Log.d(
                 TAG,
-                "DEV: Raw CVA=${"%.1f".format(cvaPixel)}°, Active Threshold=${"%.1f".format(cvaThreshold)}°, Classification=$posture"
+                "DEV: Landmarks[Ear=(${"%.3f".format(rawEarX)}, ${"%.3f".format(rawEarY)}), Sh=(${"%.3f".format(rawShoulderX)}, ${"%.3f".format(rawShoulderY)})] | " +
+                "Vis[Ear=${"%.2f".format(earVis)}, Sh=${"%.2f".format(shVis)}] | " +
+                "Raw CVA=${"%.1f".format(cvaPixel)}°, Active Threshold=${"%.1f".format(cvaThreshold)}°, Classification=$posture"
             )
             Log.d(
                 TAG,
