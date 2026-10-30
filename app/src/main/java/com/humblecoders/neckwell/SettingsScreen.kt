@@ -74,6 +74,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 private const val TAG = "NeckWell_Settings"
 
@@ -189,11 +191,12 @@ fun SettingsScreen(navController: NavController) {
             }
 
             SettingsSection("Device") {
-                val connectionLabel = when (deviceStatus.connectionState) {
-                    DeviceConnectionState.CONNECTED -> "Connected"
-                    DeviceConnectionState.CONNECTING -> "Connecting…"
-                    DeviceConnectionState.RECONNECTING -> "Reconnecting…"
-                    DeviceConnectionState.DISCONNECTED -> "Disconnected"
+                val deviceStatusViewModel: DeviceStatusViewModel = viewModel()
+                val conn by deviceStatusViewModel.connectionState.collectAsStateWithLifecycle()
+                val connectionLabel = when (conn) {
+                    DeviceConn.CONNECTED -> "Connected"
+                    DeviceConn.DISCONNECTED -> "Disconnected"
+                    DeviceConn.CHECKING -> "Checking…"
                 }
                 SettingsClickableItem(
                     icon = Icons.Outlined.Link,

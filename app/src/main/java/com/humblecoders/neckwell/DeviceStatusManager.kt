@@ -29,7 +29,7 @@ enum class WifiState {
 }
 
 data class DeviceStatus(
-    val connectionState: DeviceConnectionState = DeviceConnectionState.CONNECTED,
+    val connectionState: DeviceConnectionState = DeviceConnectionState.DISCONNECTED,
     val wifiState: WifiState = WifiState.CONNECTED,
     val batteryLevel: Int = 85,
     val isLowBattery: Boolean = false,
@@ -268,7 +268,7 @@ object DeviceStatusManager {
             "connecting", "pairing" -> DeviceConnectionState.CONNECTING
             "reconnecting", "resuming", "retry", "retrying" -> DeviceConnectionState.RECONNECTING
             "disconnected", "false", "offline", "idle" -> DeviceConnectionState.DISCONNECTED
-            else -> DeviceConnectionState.CONNECTED
+            else -> DeviceConnectionState.DISCONNECTED
         }
     }
 

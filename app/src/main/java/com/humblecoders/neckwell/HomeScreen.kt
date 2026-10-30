@@ -86,12 +86,16 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
 fun HomeScreen() {
     val context = LocalContext.current
     NeckWellPreferences.init(context)
 
+    val deviceStatusViewModel: DeviceStatusViewModel = viewModel()
+    val deviceConn by deviceStatusViewModel.connectionState.collectAsStateWithLifecycle()
     val deviceStatus by DeviceStatusManager.deviceStatus.collectAsState()
     var currentPosture by remember { mutableStateOf<PostureData?>(null) }
     var todayData by remember { mutableStateOf<List<PostureData>>(emptyList()) }
@@ -212,7 +216,7 @@ fun HomeScreen() {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    DeviceConnectionBadge(connectionState = deviceStatus.connectionState)
+                    ConnectionStatus(viewModel = deviceStatusViewModel)
                     IconButton(onClick = ::refreshData) {
                         Icon(Icons.Outlined.Refresh, "Refresh posture data", tint = NeckWellTextSecondary)
                     }
@@ -240,45 +244,13 @@ fun HomeScreen() {
             StatCardsGrid(todayData)
             ConnectionCard(
                 deviceStatus = deviceStatus,
+                deviceConn = deviceConn,
                 onToggle = { DeviceStatusManager.toggleConnection() }
             )
             WeeklyBarChartStrip(todayData)
             TipBanner()
             Spacer(Modifier.height(4.dp))
         }
-    }
-}
-
-@Composable
-private fun DeviceConnectionBadge(
-    connectionState: DeviceConnectionState,
-    modifier: Modifier = Modifier
-) {
-    val (dotColor, label) = when (connectionState) {
-        DeviceConnectionState.CONNECTED -> NeckWellAccent to "Connected"
-        DeviceConnectionState.CONNECTING -> WarningAmberColor to "Connecting…"
-        DeviceConnectionState.RECONNECTING -> WarningAmberColor to "Reconnecting…"
-        DeviceConnectionState.DISCONNECTED -> AlertCoral to "Disconnected"
-    }
-
-    Row(
-        modifier = modifier
-            .background(NeckWellSurface, RoundedCornerShape(20.dp))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .background(dotColor, CircleShape)
-        )
-        Text(
-            text = label,
-            color = NeckWellTextPrimary,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold
-        )
     }
 }
 
@@ -433,10 +405,13 @@ private fun StatCard(
 }
 
 @Composable
-private fun ConnectionCard(deviceStatus: DeviceStatus, onToggle: () -> Unit) {
-    val isConnected = deviceStatus.connectionState == DeviceConnectionState.CONNECTED
-    val isConnecting = deviceStatus.connectionState == DeviceConnectionState.CONNECTING ||
-            deviceStatus.connectionState == DeviceConnectionState.RECONNECTING
+private fun ConnectionCard(
+    deviceStatus: DeviceStatus,
+    deviceConn: DeviceConn,
+    onToggle: () -> Unit
+) {
+    val isConnected = deviceConn == DeviceConn.CONNECTED
+    val isChecking = deviceConn == DeviceConn.CHECKING
 
     NeckWellCard {
         Column(Modifier.fillMaxWidth().padding(18.dp)) {
@@ -448,13 +423,12 @@ private fun ConnectionCard(deviceStatus: DeviceStatus, onToggle: () -> Unit) {
                 IconTile(
                     icon = when {
                         isConnected -> Icons.Outlined.Link
-                        isConnecting -> Icons.Outlined.Link
                         else -> Icons.Outlined.LinkOff
                     },
                     tint = when {
                         isConnected -> NeckWellAccent
-                        isConnecting -> WarningAmberColor
-                        else -> NeckWellTextSecondary
+                        isChecking -> NeckWellTextSecondary
+                        else -> AlertCoral
                     },
                     size = 48
                 )
@@ -477,26 +451,24 @@ private fun ConnectionCard(deviceStatus: DeviceStatus, onToggle: () -> Unit) {
                             Modifier
                                 .size(10.dp)
                                 .background(
-                                    when (deviceStatus.connectionState) {
-                                        DeviceConnectionState.CONNECTED -> NeckWellAccent
-                                        DeviceConnectionState.CONNECTING -> WarningAmberColor
-                                        DeviceConnectionState.RECONNECTING -> WarningAmberColor
-                                        DeviceConnectionState.DISCONNECTED -> NeckWellTextSecondary
+                                    when (deviceConn) {
+                                        DeviceConn.CONNECTED -> NeckWellAccent
+                                        DeviceConn.CHECKING -> NeckWellTextSecondary
+                                        DeviceConn.DISCONNECTED -> AlertCoral
                                     },
                                     CircleShape
                                 )
                         )
                         Text(
-                            when (deviceStatus.connectionState) {
-                                DeviceConnectionState.CONNECTED -> "Device Connected"
-                                DeviceConnectionState.CONNECTING -> "Connecting to Device…"
-                                DeviceConnectionState.RECONNECTING -> "Reconnecting to Device…"
-                                DeviceConnectionState.DISCONNECTED -> "Device Disconnected"
+                            when (deviceConn) {
+                                DeviceConn.CONNECTED -> "Device Connected"
+                                DeviceConn.CHECKING -> "Checking Connection…"
+                                DeviceConn.DISCONNECTED -> "Device Disconnected"
                             },
-                            color = when {
-                                isConnected -> NeckWellAccent
-                                isConnecting -> WarningAmberColor
-                                else -> NeckWellTextPrimary
+                            color = when (deviceConn) {
+                                DeviceConn.CONNECTED -> NeckWellAccent
+                                DeviceConn.CHECKING -> NeckWellTextSecondary
+                                DeviceConn.DISCONNECTED -> AlertCoral
                             },
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
@@ -506,7 +478,6 @@ private fun ConnectionCard(deviceStatus: DeviceStatus, onToggle: () -> Unit) {
 
                 val buttonColor = when {
                     isConnected -> AlertCoral
-                    isConnecting -> AlertCoral
                     else -> NeckWellAccent
                 }
 
@@ -526,7 +497,6 @@ private fun ConnectionCard(deviceStatus: DeviceStatus, onToggle: () -> Unit) {
                     Text(
                         when {
                             isConnected -> "Disconnect"
-                            isConnecting -> "Cancel"
                             else -> "Connect"
                         },
                         fontWeight = FontWeight.SemiBold,
@@ -550,19 +520,18 @@ private fun ConnectionCard(deviceStatus: DeviceStatus, onToggle: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    val connColor = when {
-                        isConnected -> NeckWellAccent
-                        isConnecting -> WarningAmberColor
-                        else -> NeckWellTextSecondary
+                    val connColor = when (deviceConn) {
+                        DeviceConn.CONNECTED -> NeckWellAccent
+                        DeviceConn.CHECKING -> NeckWellTextSecondary
+                        DeviceConn.DISCONNECTED -> AlertCoral
                     }
                     val connIcon = if (isConnected) Icons.Outlined.Link else Icons.Outlined.LinkOff
                     Icon(connIcon, contentDescription = "Connection state", tint = connColor, modifier = Modifier.size(16.dp))
                     Text(
-                        when (deviceStatus.connectionState) {
-                            DeviceConnectionState.CONNECTED -> "Sensor Online"
-                            DeviceConnectionState.CONNECTING -> "Connecting…"
-                            DeviceConnectionState.RECONNECTING -> "Reconnecting…"
-                            DeviceConnectionState.DISCONNECTED -> "Sensor Offline"
+                        when (deviceConn) {
+                            DeviceConn.CONNECTED -> "Sensor Online"
+                            DeviceConn.CHECKING -> "Checking…"
+                            DeviceConn.DISCONNECTED -> "Sensor Offline"
                         },
                         color = connColor,
                         fontSize = 12.sp,
